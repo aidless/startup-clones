@@ -59,6 +59,48 @@ python -m agentinbox.cli demo
 2026-11-10 客户 Bob 询问退款进度，已回复待审批。
 ```
 
+## 真实语料：SEC 往来函件（CORRESP）
+
+自带夹具只能证明代码能跑，证明不了产品能活。这里接了 SEC EDGAR 的真实往来函件
+（公司与监管之间的一来一回，Apple FY2023 10-K 的三封）：
+
+```bash
+python scripts/fetch_sec_corresp.py 0000320193    # 拉 CORRESP / UPLOAD
+python scripts/real_corresp.py                    # 解析 + 线程重建
+```
+
+真实函件把三件事顶出来了，全部已修并锁进 `tests/test_corresp.py`：
+
+| 真实世界的问题 | 后果 | 修法 |
+| --- | --- | --- |
+| 72 列**硬换行**把日期拆成两行（`April\n2, 2024`） | 线程断链、被回复日期丢失 | 正则前先压平空白 |
+| `Re:` 块里的 `Response dated March 20, 2024` 是背景，不是被回复对象 | 把「回应谁」搞错一整轮 | 看 `dated` 前面 160 字符：以 `Response` 结尾的跳过，含 `letter`/`comment` 的才是目标 |
+| 月份交替漏了 `(?:...)` | `"(January\|February\s+\d{1,2})"` 被读成「January」或「February+数字」，`group(1)` 只剩月份 | 月份表包非捕获组 |
+
+实跑输出：
+
+```
+解析 3 封，1 个线程
+
+线程 10-K|001-36743
+   2024-03-20  10-K  file=001-36743  回应 March 6, 2024   [保密请求 → 法务]
+      审批流: regulator → confidential
+   2024-04-05  10-K  file=001-36743  回应 April 2, 2024
+      审批流: regulator
+   2024-04-29  10-K  file=001-36743  回应 April 2, 2024   [保密请求 → 法务]
+      审批流: regulator → confidential
+
+缺口：
+   0001140361-24-018378 | 被回复的信（April 2, 2024）不在语料中，需另行取得
+   0000320193-24-000061 | 被回复的信（April 2, 2024）不在语料中，需另行取得
+```
+
+两封回复指向同一封四月二日的员工意见函 —— 这是真实的「同一轮意见、两次回复」，
+线程不能假设一对一。
+
+`approval_route()`：保密函件（Rule 83 / FOIA Confidential Treatment）走 `legal` 而不是
+`compliance` —— 普通审批人会看到正文，而这正是保密请求要挡住的。
+
 ## 架构
 
 ```
