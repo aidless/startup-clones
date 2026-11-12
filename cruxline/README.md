@@ -57,6 +57,47 @@ c3 score=0.750 FAIL  [硬否决: no_tool_error]
 回归用例：c1
 ```
 
+## 真实轨迹：60 条 dsh 会话（我自己跑出来的）
+
+夹具是我编的 8 条轨迹，只能证明规则会算数。真实轨迹是 `~/.dsh/sessions` 里的会话日志，
+一键导出（`scripts/export_dsh_traces.py`），不带任何标准答案——评分器只看**过程**。
+
+```bash
+python scripts/export_dsh_traces.py --limit 60 --min-steps 4
+python scripts/real_traces.py
+```
+
+```
+60 条真实轨迹：PASS 58 / FAIL 2
+步数中位数 8，最多 804；结束原因 {'completed': 57, 'interrupted': 2, 'error': 1}
+```
+
+真实数据改掉了我两条想当然的规则：
+
+| 原本的规则 | 真实数据说什么 | 改成 |
+| --- | --- | --- |
+| `tool_diversity`：只用一种工具 = 没找对路 | 1829 次 bash vs 69 次 read —— 编码 agent 的工作**本来就**在 shell 里 | 换成 `verify_after_write`：改完文件之后有没有任何验证动作 |
+| 回合没走到 `completed` 就算失败 | `interrupted` 是用户/压缩打断，不是 agent 的错 | 只有 `error` 才硬否决 |
+
+编码 agent rubric（权重合计 1.0，只有一条致命项）：
+
+| 规则 | 权重 | 致命 | 抓什么 |
+| --- | --- | --- | --- |
+| `turn_completed` | 0.15 | ✅ | 回合异常结束（`error`） |
+| `no_loop` | 0.20 | | 同一 (工具, 参数) 连续重复 ≥3 次 |
+| `retry_after_error_changed` | 0.20 | | 报错后原封不动重试 |
+| `read_before_write` | 0.15 | | 没读过就 edit |
+| `produced_answer` | 0.15 | | 没有结尾答复 |
+| `verify_after_write` | 0.15 | | 末次写之后没有任何验证 |
+
+真实命中的两条例外（是产物，不是噪声）：
+
+```
+session-f0014d4b-#t141  score=0.700 FAIL
+  - read_before_write:  未读取就编辑 .../g24_davis19_tail/PROVENANCE.md
+  - verify_after_write: 2 次写，末次写之后没有任何验证动作
+```
+
 ## 架构
 
 ```
