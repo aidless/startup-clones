@@ -109,9 +109,51 @@ class OpenAICompatProvider(Provider):
                       citations=citations, run_index=run_index)
 
 
+class OllamaProvider(Provider):
+    """本机 Ollama。用一个模型都跑不起的环境证明不了「多模型不一致」这件事。
+
+    GEO 的真实风险不是「某个模型怎么说」，而是「换个模型结论就变」。
+    所以本地能跑多个小模型，比接一个贵的大模型更有价值。
+    """
+
+    name = "ollama"
+
+    def __init__(self, host: str | None = None, timeout: float = 300.0):
+        self.host = (host or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+        self.timeout = timeout
+
+    def complete(self, prompt: str, model: str = "qwen3:8b", run_index: int = 0) -> Answer:
+        import httpx
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            # think=False 是必须的：qwen3 这类混合推理模型默认先吐 thinking，
+            # 会把 num_predict 吃光，response 返回空串。实测 8 条提示词全空。
+            "think": False,
+            "options": {"temperature": 0.7 if run_index else 0.2, "num_predict": 400},
+        }
+        r = httpx.post(f"{self.host}/api/generate", json=payload, timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
+        text = (data.get("response") or "").strip()
+        if not text:
+            # 空答案不是「没提到任何品牌」，是这次采样失败。混为一谈会污染份额统计。
+            raise RuntimeError(
+                f"模型 {model} 返回空文本（done_reason={data.get('done_reason')}，"
+                f"thinking 长度={len(data.get('thinking') or '')}）")
+        urls = list(dict.fromkeys(URL_RE.findall(text)))
+        citations = [Citation(url=u, domain=_domain(u)) for u in urls]
+        return Answer(prompt_id="", provider=self.name, model=model, text=text,
+                      citations=citations, run_index=run_index)
+
+
 def build_provider(kind: str, brands: list[str], **kw) -> Provider:
     if kind == "mock":
         return MockProvider(brands, seed=int(kw.get("seed", 7)))
+    if kind == "ollama":
+        return OllamaProvider(host=kw.get("base_url") or kw.get("host"))
     if kind in {"openai", "openai-compat", "deepseek", "kimi", "vllm"}:
         return OpenAICompatProvider(api_key=kw.get("api_key"), base_url=kw.get("base_url"))
     raise ValueError(f"未知 provider: {kind}")

@@ -90,7 +90,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--brand", required=True)
     r.add_argument("--category", required=True)
     r.add_argument("--competitors", default="")
-    r.add_argument("--provider", default="mock")
+    r.add_argument("--provider", default="mock",
+                   choices=["mock", "ollama", "openai", "openai-compat", "deepseek", "kimi", "vllm"],
+                   help="ollama 走本机 127.0.0.1:11434，不需要 key")
     r.add_argument("--model", default="mock-1")
     r.add_argument("--repeat", type=int, default=3)
     r.add_argument("--limit", type=int, default=0)
