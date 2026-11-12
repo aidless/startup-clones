@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentstore"
+version = "0.1.0"
+description = "agent 应用商店的最小内核：清单、不可变版本、权限闸、计量与分成"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+agentstore = "agentstore.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentstore*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

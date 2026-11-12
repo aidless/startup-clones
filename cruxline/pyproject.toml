@@ -1,0 +1,22 @@
+[project]
+name = "cruxline"
+version = "0.1.0"
+description = "把企业专家的判断变成 agent 评测 rubric：逐条判定、人工一致性校准、版本回归门禁"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+cruxline = "cruxline.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cruxline*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

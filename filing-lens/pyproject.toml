@@ -1,0 +1,23 @@
+[project]
+name = "filinglens"
+version = "0.1.0"
+description = "用自然语言查美股 SEC 公开文件（10-K / 10-Q），每个答案都带可点击的出处"
+requires-python = ">=3.10"
+dependencies = ["beautifulsoup4>=4.12", "lxml>=5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+filinglens = "filinglens.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["filinglens*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
