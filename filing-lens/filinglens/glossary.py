@@ -80,6 +80,15 @@ GLOSSARY: dict[str, str] = {
 }
 
 # 单字/双字也常见，但单字扩展噪声太大，只处理 >=2 字的键
+def expand_groups(query: str) -> list[list[str]]:
+    """按「概念」返回扩写词——一个中文词对应一组英文词，而不是一锅平铺的词。
+
+    平铺会失真：供应链 → supply chain suppliers manufacturing，段落里只用上
+    supply chain，覆盖率就被剩下两个词拉低，真答案被判成证据不足。
+    """
+    return [en.split() for zh, en in GLOSSARY.items() if zh in query]
+
+
 def expand(query: str) -> str:
     extra: list[str] = []
     for zh, en in GLOSSARY.items():

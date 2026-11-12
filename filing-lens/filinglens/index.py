@@ -89,13 +89,29 @@ class BM25Index:
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
-def coverage(query: str, hit: Hit, idf=None) -> float:
+def coverage(query: str, hit: Hit, idf=None, groups: list[list[str]] | None = None) -> float:
     """查询词被命中的比例 —— 用来判「答非所问」。
 
     分母只算「可能被命中」的词：中文单字在英文语料里按构造就不可能命中，
     把它们算进分母会让中文提问永远判成证据不足（真实 10-K 上实测：上限 ~20%）。
     拉丁词一个都没有时才退回全部词（纯中文且没走词表扩写的场景）。
     """
+    appear_all = set(hit.matched) | set(tokenize(hit.chunk.text))
+    if groups:
+        # 概念级覆盖：一个概念算命中，要求它那组英文词里至少一半出现在段落中。
+        covered = total = 0
+        for g in groups:
+            # 词表里的词可能带连字符（full-time），而分词器按 [a-z0-9]+ 切，
+            # 不先拆开就永远匹配不上，整个概念被判 0。
+            terms = [tok for term in g for tok in tokenize(term) if len(tok) >= 2]
+            if not terms:
+                continue
+            total += 1
+            if len([t for t in terms if t in appear_all]) / len(terms) >= 0.5:
+                covered += 1
+        if total:
+            return covered / total
+
     q = set(tokenize(query))
     if not q:
         return 0.0

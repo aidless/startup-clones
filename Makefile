@@ -11,6 +11,9 @@ test:
 		( cd $$p && python3 -m pytest -q ) || exit 1; \
 	done
 
+serve:
+	cd filing-lens && python3 app/server.py
+
 demo:
 	@( cd geo-radar     && python3 -m georadar.cli demo )
 	@( cd filing-lens   && python3 -m filinglens.cli demo )

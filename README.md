@@ -62,3 +62,17 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 ## 许可
 
 MIT。
+
+## 界面
+
+filing-lens 带一个本地演示页（FastAPI + 单页 HTML，无前端构建）：
+
+```bash
+cd filing-lens && python3 app/server.py      # → http://127.0.0.1:8765
+# 或
+make serve
+```
+
+页面做三件事：选一份已下载的 10-K、提问、看答案卡片。
+卡片上必须同时出现三样东西——**回答正文、状态徽章、段落级出处**。
+没出处就没有答案（`insufficient_evidence`），这是库里已经在守的契约，界面上也一样。

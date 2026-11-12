@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>filing-lens · 问 10-K</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --ink: #e6e8ee;
+    --dim: #8b93a5; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header { padding: 28px 24px 18px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0 0 6px; font-size: 20px; letter-spacing: .2px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--dim); font-size: 13px; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px; }
+  .filing-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  select, input, button {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px;
+  }
+  input { flex: 1; min-width: 240px; }
+  button { cursor: pointer; background: var(--accent); color: #0b0d11; border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 20px; }
+  .chip {
+    font-size: 12.5px; color: var(--dim); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--accent); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .badge {
+    display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .4px;
+    padding: 2px 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px;
+  }
+  .ok   { color: #052e16; background: var(--ok); }
+  .no_data, .insufficient_evidence { color: #2a1a00; background: var(--warn); }
+  .answer { font-size: 16px; }
+  .meta { color: var(--dim); font-size: 12.5px; margin-top: 10px; }
+  .cite { border-left: 2px solid var(--line); padding: 4px 0 4px 12px; margin: 10px 0; }
+  .cite .ref { color: var(--accent); font-size: 12.5px; font-family: ui-monospace, monospace; }
+  .cite .kind { color: var(--dim); font-size: 11.5px; margin-left: 8px; }
+  .cite .quote { color: #c3c9d6; font-size: 13.5px; margin-top: 3px; }
+  .empty { color: var(--dim); font-size: 13px; }
+  footer { color: var(--dim); font-size: 12px; text-align: center; padding: 8px 24px 40px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>filing<span>-</span>lens</h1>
+  <div class="sub">问一份 10-K。数字走 XBRL，正文给出段落级出处；证据不够就拒答。</div>
+</header>
+
+<main>
+  <div class="filing-row">
+    <select id="filing"></select>
+    <input id="q" placeholder="例如：营收多少？ / 供应链主要集中在哪些地区？" autocomplete="off">
+    <button id="go">问</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div id="out"><div class="card empty">选一份文件，然后提问。</div></div>
+</main>
+
+<footer>本地演示：只读 <code>data/</code> 下的 10-K 文件，不联网、不存问题。</footer>
+
+<script>
+const SUGGEST = [
+  "营收多少？",
+  "研发费用涨了多少？",
+  "供应链主要集中在哪些地区？",
+  "有多少员工？",
+  "关税对成本有什么影响？",
+  "CEO 的生日是哪天？"
+];
+let current = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+async function boot() {
+  const res = await fetch("/api/filings").then((r) => r.json());
+  const sel = $("filing");
+  if (!res.filings.length) {
+    $("out").innerHTML = '<div class="card empty">data/ 下没有 10-K。先跑 <code>python3 scripts/fetch_edgar.py</code>。</div>';
+    return;
+  }
+  for (const f of res.filings) {
+    const opt = document.createElement("option");
+    opt.value = f.cik;
+    opt.textContent = `CIK ${f.cik} · FY ${f.period}${f.has_xbrl ? "" : " · 无 XBRL"}`;
+    sel.appendChild(opt);
+  }
+  current = sel.value;
+  sel.onchange = () => { current = sel.value; showMeta(); };
+  renderChips();
+  showMeta();
+}
+
+function renderChips() {
+  $("chips").innerHTML = SUGGEST.map((s) => `<span class="chip">${esc(s)}</span>`).join("");
+  for (const el of document.querySelectorAll(".chip")) {
+    el.onclick = () => { $("q").value = el.textContent; ask(); };
+  }
+}
+
+async function showMeta() {
+  const m = await fetch(`/api/meta?cik=${current}`).then((r) => r.json());
+  $("out").innerHTML = `<div class="card empty">已载入 ${esc(m.doc)}：${m.sections} 个 Item、${m.chunks} 个段落块、${m.tables} 张表${m.has_xbrl ? "、XBRL 可用" : "、无 XBRL（数字类问题会拒答）"}。</div>`;
+}
+
+async function ask() {
+  const q = $("q").value.trim();
+  if (q.length < 2) return;
+  $("go").disabled = true;
+  $("out").innerHTML = '<div class="card empty">检索中…</div>';
+  try {
+    const r = await fetch(`/api/ask?cik=${current}&q=${encodeURIComponent(q)}`).then((r) => r.json());
+    $("out").innerHTML = card(r);
+  } catch (e) {
+    $("out").innerHTML = `<div class="card empty">请求失败：${esc(String(e))}</div>`;
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+function card(r) {
+  const cites = r.citations.length
+    ? r.citations.map((c, i) => `
+      <div class="cite">
+        <span class="ref">[${i + 1}] ${esc(c.ref)}</span><span class="kind">${esc(c.kind)}</span>
+        <div class="quote">${esc(c.quote)}</div>
+      </div>`).join("")
+    : '<div class="meta">没有引用——按契约，没有引用就没有答案。</div>';
+  return `
+    <div class="card">
+      <div class="answer"><span class="badge ${esc(r.status)}">${esc(r.status)}</span>${esc(r.text)}</div>
+      <div class="meta">路径 ${esc(r.kind)} · 置信度 ${r.confidence}</div>
+      ${cites}
+    </div>`;
+}
+
+$("go").onclick = ask;
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+boot();
+</script>
+</body>
+</html>

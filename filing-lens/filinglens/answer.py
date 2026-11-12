@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from . import facts as F
 from .edgar import Chunk
 from . import glossary
-from .index import BM25Index, coverage, tokenize
+from .index import CJK_RE, BM25Index, coverage, tokenize
 
 MIN_COVERAGE = 0.45
 # 拒答话术必须统一：客户看到两种不同的"答不了"会以为是 bug
@@ -61,6 +61,14 @@ class Response:
 
 
 YEAR_RE = re.compile(r"^(19|20)\d{2}$")
+
+
+def _is_pure_cjk(text: str) -> bool:
+    """问句里有没有可用的拉丁词——没有才需要靠扩写词表撑起分母。"""
+    for tok in tokenize(text):
+        if not CJK_RE.search(tok) and len(tok) >= 2:
+            return False
+    return True
 
 
 def has_quantity(sentence: str) -> bool:
@@ -119,8 +127,23 @@ class Answerer:
         if not hits:
             return Response(kind="excerpt", status="insufficient_evidence",
                             text=REFUSAL, citations=[])
-        best = hits[0]
-        cov = coverage(q_expanded, best, idf=self.index._idf)
+        # 覆盖率要在 top-k 里挑「覆盖得最全的那个段落」，不能只看第一名：
+        # 问「有多少员工」时第一名是讲研发费用里 headcount 成本的风险段，
+        # 真正的员工数在第二名（Item 1¶51），只看 best 会把它判成证据不足。
+        groups = glossary.expand_groups(question)
+        scored = []
+        for rank, h in enumerate(hits):
+            cov_words = coverage(q_expanded, h, idf=self.index._idf)
+            cov_concept = coverage(question, h, groups=groups) if groups else 0.0
+            scored.append((max(cov_words, cov_concept), cov_words, cov_concept, rank, h))
+        cov, cov_words, cov_concept, _, best = max(scored, key=lambda x: (x[0], -x[3]))
+        if CJK_RE.search(question) and cov_concept == 0.0:
+            # 中文提问只能靠词表桥接。词表里一个概念都没被命中时，剩下的匹配都是
+            # 顺带撞上的英文词（「CEO 的生日」只撞到 ceo），必须拒答——
+            # 否则分母缩小到一个词，任何含 CEO 的段落都能拿到 100% 覆盖率。
+            return Response(kind="excerpt", status="insufficient_evidence",
+                            text=REFUSAL + "（问题里的中文概念不在词表内，无法桥接到英文原文）",
+                            citations=[])
         if cov < MIN_COVERAGE:
             return Response(kind="excerpt", status="insufficient_evidence",
                             text=REFUSAL + f"（最相关段落只覆盖 {cov:.0%} 的查询词）",
