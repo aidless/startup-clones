@@ -22,19 +22,50 @@ from georadar.extract import find_mentions  # noqa: E402
 from georadar.metrics import brand_stats  # noqa: E402
 from georadar.providers import build_provider  # noqa: E402
 
-BRANDS = ["Ramp", "Brex", "Mercury", "Expensify", "Bill.com", "Navan",
-          "Divvy", "Airbase", "Stampli", "Coupa"]
-
-PROMPTS = [
-    "What is the best expense management software for a 50-person startup?",
-    "Which corporate card should a seed-stage startup use?",
-    "Compare Ramp and Brex for startups.",
-    "What tools automate expense reports for a small finance team?",
-    "Which software do CFOs use to track startup spend?",
-    "Which spend management platform has the best accounting integration?",
-    "What is the best alternative to Expensify for a US startup?",
-    "Which vendor and spend tools should a Series A company evaluate?",
-]
+CATEGORIES: dict[str, dict] = {
+    "expense": {
+        "brands": ["Ramp", "Brex", "Mercury", "Expensify", "Bill.com", "Navan",
+                   "Divvy", "Airbase", "Stampli", "Coupa"],
+        "prompts": [
+            "What is the best expense management software for a 50-person startup?",
+            "Which corporate card should a seed-stage startup use?",
+            "Compare Ramp and Brex for startups.",
+            "What tools automate expense reports for a small finance team?",
+            "Which software do CFOs use to track startup spend?",
+            "Which spend management platform has the best accounting integration?",
+            "What is the best alternative to Expensify for a US startup?",
+            "Which vendor and spend tools should a Series A company evaluate?",
+        ],
+    },
+    "crm": {
+        "brands": ["Salesforce", "HubSpot", "Pipedrive", "Close", "Attio", "Zoho",
+                   "Copper", "Folk", "Monday", "Freshsales"],
+        "prompts": [
+            "What is the best CRM for a 20-person B2B startup?",
+            "Which CRM should a solo founder use?",
+            "Compare HubSpot and Pipedrive for a small sales team.",
+            "What CRM has the best email integration?",
+            "Which CRM is easiest to set up without an admin?",
+            "Best lightweight alternative to Salesforce for startups?",
+            "Which CRM do seed-stage startups actually use?",
+            "What CRM should a Series A sales team migrate to?",
+        ],
+    },
+    "support": {
+        "brands": ["Zendesk", "Intercom", "Freshdesk", "Help Scout", "Front", "Crisp",
+                   "Gorgias", "Kustomer", "Kayako", "LiveAgent"],
+        "prompts": [
+            "What is the best customer support tool for a small SaaS company?",
+            "Which helpdesk should a 5-person support team use?",
+            "Compare Zendesk and Intercom for a startup.",
+            "What support tool has the best AI auto-reply?",
+            "Which shared inbox tool is best for a small team?",
+            "Best alternative to Zendesk for a bootstrapped company?",
+            "Which support platform integrates best with Shopify?",
+            "What tool should a Series A company use for customer support?",
+        ],
+    },
+}
 
 LOCAL_MODELS = ["llama3.2:3b", "qwen2.5:7b", "qwen3:8b"]
 # Magpie 网关上的免费/低价模型（本机 127.0.0.1:3425）：
@@ -47,7 +78,7 @@ MAGPIE_MODELS = ["deepseek-v4.1-flash", "hy4free",
 
 def main() -> int:
     argv = sys.argv[1:]
-    limit = len(PROMPTS)
+    limit = 0  # 0 = 该赛道全部提示词
     kind = "ollama"
     models = LOCAL_MODELS
     for a in argv:
@@ -57,16 +88,25 @@ def main() -> int:
             models = a.split("=", 1)[1].split(",")
         elif a.isdigit():
             limit = int(a)
-    prompts = PROMPTS[:limit]
-    provider = build_provider(kind, BRANDS)
-    print(f"provider={kind} models={models}", flush=True)
-    out = ROOT / f"data/geo_real_{kind}.json"
+    category = "expense"
+    for a in argv:
+        if a.startswith("--category="):
+            category = a.split("=", 1)[1]
+    if category not in CATEGORIES:
+        raise SystemExit(f"未知赛道 {category}，可选 {sorted(CATEGORIES)}")
+    brands = CATEGORIES[category]["brands"]
+    all_prompts = CATEGORIES[category]["prompts"]
+    prompts = all_prompts[:limit] if limit else all_prompts
+    provider = build_provider(kind, brands)
+    print(f"category={category} provider={kind} models={models}", flush=True)
+    out = ROOT / f"data/geo_real_{category}_{kind}.json"
     # 支持分批跑：已跑过的模型结果保留，重跑只覆盖同名模型
-    result: dict = {"brands": BRANDS, "prompts": prompts, "models": {}}
+    result: dict = {"category": category, "brands": brands,
+                    "prompts": prompts, "models": {}}
     if out.exists():
         try:
             prev = json.loads(out.read_text())
-            if prev.get("brands") == BRANDS:
+            if prev.get("brands") == brands:
                 result["models"] = prev.get("models", {})
                 print(f"接续已有结果：{sorted(result['models'])}", flush=True)
         except json.JSONDecodeError:
@@ -82,7 +122,7 @@ def main() -> int:
             except Exception as exc:  # 单条失败不能毁掉整轮
                 print(f"  [{i}] 失败: {exc}", flush=True)
                 continue
-            found = find_mentions(ans, BRANDS)
+            found = find_mentions(ans, brands)
             mentions.extend(found)
             answers.append({"prompt": p, "text": ans.text[:1500],
                             "brands": [m.brand for m in found]})

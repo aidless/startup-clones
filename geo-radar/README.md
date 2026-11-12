@@ -152,3 +152,41 @@ python3 scripts/real_geo.py --provider=magpie \
 ```
 
 `data/geo_real_<provider>.json` 保留每个模型每条提示词的原始回答，可复核每个提及。
+
+## 跨赛道复现：三个赛道，同一个病
+
+一个赛道不足以支撑结论，所以把同一套代码换两个赛道再跑（`--category=crm|support`）。
+每个赛道 10 个候选品牌、8 条买家问题、一个强模型对一个本机小模型。
+
+| 赛道 | 强模型前 3（deepseek-v4.1-flash） | 本机 qwen3:8b 前 3 | 本地命中品牌 |
+|---|---|---|---|
+| 费用管理 expense | Ramp 21.6% / Brex 21.6% / Expensify 13.5% | **Expensify 50.0%** / Coupa 25.0% / Ramp 12.5% | 5 / 10 |
+| CRM | HubSpot 22.9% / Pipedrive 22.9% / Salesforce 17.1% | HubSpot 36.4% / Zoho 27.3% / Salesforce 18.2% | 4 / 10 |
+| 客服 support | **Help Scout 18.9%** / Intercom 18.9% / Zendesk 18.9% | Zendesk 36.8% / Freshdesk 26.3% / Intercom 21.0% | 5 / 10 |
+
+强模型三个赛道都点出 **8–10 个品牌**；本机小模型只有 **4–5 个**。
+
+### 三条复现出来的规律
+
+1. **长尾截断是稳定复现的**：CRM 赛道本地模型从未提到 Attio、Close、Folk、Monday、Copper、Freshsales
+   （六个全丢）；客服赛道从未提到 Help Scout 和 Front——而这两家在强模型里分别是第一和第六。
+   **越是新公司越容易在小模型里「不存在」。**
+2. **份额被系统性膨胀**：本地模型给第一名的份额是 36–50%，强模型给第一名只有 19–22%。
+   小模型的「份额」测的其实是「知名度」——它只会反复报那几个想得起来的名字。
+3. **第一名是否对调，取决于赛道**：费用管理对调（Expensify ↔ Ramp），CRM 一致（HubSpot），
+   客服赛道强模型第一是 Help Scout、本地根本没提过。所以报告不能笼统写「排名可信」，
+   要写明是在哪个赛道、哪个档位、哪一批提示词上测的。
+
+### 产品结论
+
+GEO 报告的最低合规要求应该是三行字：**用的哪个模型、哪个档位、哪批提示词**。
+缺任何一行，这份排名就不可比——因为换档位能换掉第一名，也能让一个品牌从榜单上彻底消失。
+
+复跑：
+
+```bash
+python3 scripts/real_geo.py --category=crm     --provider=magpie --models=deepseek-v4.1-flash
+python3 scripts/real_geo.py --category=crm     --provider=ollama --models=qwen3:8b
+python3 scripts/real_geo.py --category=support --provider=magpie --models=deepseek-v4.1-flash
+python3 scripts/real_geo.py --category=support --provider=ollama --models=qwen3:8b
+```
