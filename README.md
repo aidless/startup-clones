@@ -21,6 +21,22 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 | [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 8 |
 | [`agent-store/`](agent-store) | Cowboy · 2026 年 $5M 种子 | agent 商店：不可变版本 + 最小授权 + 幂等计量 + 分成账单 | 11 |
 
+
+## 真实数据状态
+
+夹具只能证明代码能跑。每个项目对「真实世界」的接入程度不同，这里如实标：
+
+| 项目 | 真实数据 | 现在的可信度 |
+| --- | --- | --- |
+| filing-lens | Apple / Microsoft FY2026 10-K + XBRL（`scripts/fetch_edgar.py`） | 8/8 真实问答回归；6 个真实缺陷已修 |
+| audit-loop | 同上 XBRL 的 8–9 年财务序列（`scripts/real_analytics.py`） | Apple 报 2 条例外、Microsoft 零例外 |
+| agent-inbox | SEC CORRESP 往来函件（`scripts/fetch_sec_corresp.py`） | 3 封真实函件、1 线程、2 条缺口如实报出 |
+| cruxline | 自造 8 条轨迹 | 机制可信，**语料未接真实** |
+| agent-store | 自造 6 个 agent 清单 | 同上 |
+| geo-radar | 自造提示词集 | 机制可信，**需要付费采样才能算真** |
+
+`data/` 全部 gitignore —— 仓库里只有代码与测试，原始语料用脚本按需拉回。
+
 ## 抄什么，不抄什么
 
 **抄**：信息架构（左侧导航到底有哪几项）、工作流顺序（先上传再抽取再确认）、定价页的分档逻辑（按次 / 按 token / 按月）、onboarding 的第一个成功时刻、ROI 话术的锚点。
