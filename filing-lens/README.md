@@ -41,6 +41,39 @@ python -m filinglens.cli metric revenue --facts AAPL-facts.json
 export SEC_UA="your-name your@email"
 ```
 
+## 真实数据上做了哪些事（Apple FY2026 10-K 实测）
+
+夹具跑通只是及格线。接真实文件之后，四类问题立刻暴露，全部已修并锁进回归：
+
+```bash
+python scripts/fetch_edgar.py 0000320193        # 拉 Apple 10-K + XBRL（data/ 不入库）
+python scripts/real_regression.py               # 8 个问题对真实数字
+```
+
+| 问题 | 真实表现 | 修法 |
+| --- | --- | --- |
+| 目录页 | 解析出 46 个 Section，正文每段只有 1~2 个字符 | `_is_toc_gap`：两个 Item 之间只剩页码 ⇒ 目录页，整段丢弃（`test_toc_page_is_dropped`） |
+| 同一 Item 多次命中 | 交叉引用页 / 10-K Summary 索引覆盖正文 | 按 item 归并，只留正文最长的那一份（23 段，Item 1 = 20,838 字符） |
+| XBRL 同一财年多行 | 同比出现 `-61.5%` 这种离谱数字（同一 fy 混了不同 `end`） | 每个 fy 只取「最近申报 + 最新期末」那一行（`test_facts` 覆盖） |
+| 中文提问零召回 | 供应链/关税问题全部「证据不足」 | `glossary.py` 财务词表扩写 + 覆盖率分母剔除中文单字（`test_coverage_ignores_chinese_characters`） |
+| 泛词命中 | 「CEO 生日」被 Apple Arcade 那段答上（覆盖率 0.5） | 覆盖率改 IDF 加权，`apple` 在 Apple 的 10-K 里没有信息量（实测降到 0.43 → 拒答） |
+| 「多少」类问题 | 问员工数，答的是研发费用里的 headcount 成本 | 问数量时只在含「量」的句子里选（年份不算量），跨 top-3 段落找 |
+
+真实回归结果（`python scripts/real_regression.py`，8/8）：
+
+```
+[PASS] 2026 财年营收是多少？      营收：FY2026 为 478.83B USD；近三年同比 FY2024 +2.0%、FY2025 +6.4%、FY2026 +15.1%
+[PASS] 净利润是多少              净利润：FY2026 为 132.18B USD；近三年同比 FY2024 -3.4%、FY2025 +19.5%、FY2026 +18.0%
+[PASS] 研发费用是多少            研发：FY2026 为 45.77B USD；近三年同比 FY2024 +4.9%、FY2025 +10.1%、FY2026 +32.5%
+[PASS] 公司有多少员工            As of September 26, 2026, the Company had approximately 167,000 full-time equivalent employees.
+[PASS] 供应链主要依赖哪些地区    ...a majority of the Company's supplier facilities... are located outside the U.S.
+[PASS] 风险因素里提到的关税影响  Beginning in the second quarter of 2025, new tariffs were announced on imports to the U.S., including...
+[PASS] Apple 的 CEO 生日是哪天   拒绝作答（覆盖率 0.43 < 0.45）
+[PASS] 有多少家门店              拒绝作答（文件里确实没写门店数）
+```
+
+微软 FY2026 10-K（8.4 MB）同样跑通：营收 $331.84B、净利 $133.75B、23 段、87 张表。
+
 ## 架构
 
 ```

@@ -1,0 +1,16 @@
+[
+  {"q": "2026 财年营收是多少？", "status": "ok",
+   "contains": ["478.83B", "FY2026", "FY2025 +6.4%"], "cite_has": "XBRL:"},
+  {"q": "净利润是多少", "status": "ok",
+   "contains": ["132.18B", "FY2026 +18.0%"], "cite_has": "XBRL:"},
+  {"q": "研发费用是多少", "status": "ok",
+   "contains": ["45.77B", "FY2026 +32.5%"], "cite_has": "XBRL:"},
+  {"q": "公司有多少员工", "status": "ok",
+   "contains": ["167,000", "full-time equivalent employees"], "cite_has": "#Item 1"},
+  {"q": "供应链主要依赖哪些地区", "status": "ok",
+   "contains": ["supply chain", "located outside the U.S."], "cite_has": "#Item 1a"},
+  {"q": "风险因素里提到的关税影响是什么", "status": "ok",
+   "contains": ["tariffs", "China mainland"]},
+  {"q": "Apple 的 CEO 生日是哪天", "status": "insufficient_evidence", "contains": []},
+  {"q": "有多少家门店", "status": "insufficient_evidence", "contains": []}
+]

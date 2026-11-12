@@ -56,8 +56,12 @@ class Table:
 
 
 def html_to_text(html: str) -> str:
-    from bs4 import BeautifulSoup
+    import warnings
 
+    from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
+    # SEC 的 .htm 常常是 XHTML，用 lxml 的 HTML 解析器足够，屏蔽这条噪音警告
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style"]):
         tag.decompose()
@@ -70,9 +74,42 @@ def html_to_text(html: str) -> str:
     return "\n".join(line.strip() for line in text.split("\n"))
 
 
+TOC_PAGE_RE = re.compile(r"[ivxlc\d]{1,4}", re.I)
+
+
+def _is_toc_gap(gap: str) -> bool:
+    """目录页的判据不在「间距短」，而在「两个 Item 之间只剩页码」。
+
+    只用间距会误伤连续短正文（Item 4. Mine Safety Disclosures: Not applicable.），
+    而真实 10-K 的目录页每条后面恰好是一行页码。
+    """
+    g = " ".join(gap.split())
+    return bool(g) and len(g) <= 40 and bool(TOC_PAGE_RE.fullmatch(g))
+
+
+def _strip_toc(text: str, matches: list) -> list:
+    """丢掉目录页（Table of Contents）里的 Item 行。
+
+    真实 10-K 开头一定有一页目录，把所有 Item 列成「Item 1. Business / 1」。
+    不处理它，解析结果就是一堆正文只有 1~2 个字符的 Section（Apple FY2026 实测 46 段）。
+    判据：连续两条以上「条目之间只剩页码」的间隔 = 目录页，整条链丢掉。
+    """
+    if len(matches) < 2:
+        return matches
+    gaps = [" ".join(text[matches[k].end():matches[k + 1].start()].split())
+            for k in range(len(matches) - 1)]
+    toc_like = [_is_toc_gap(g) for g in gaps]
+    drop = [False] * len(matches)
+    if sum(toc_like) >= 2:          # 单独一条「后面正好是个数字」不算目录页
+        for k, like in enumerate(toc_like):
+            if like:
+                drop[k] = True
+    return [m for m, d in zip(matches, drop) if not d]
+
+
 def split_sections(text: str) -> list[Section]:
-    matches = list(ITEM_RE.finditer(text))
-    sections: list[Section] = []
+    matches = _strip_toc(text, list(ITEM_RE.finditer(text)))
+    found: list[tuple[int, Section]] = []
     for i, m in enumerate(matches):
         item = m.group(1).lower()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
@@ -80,7 +117,16 @@ def split_sections(text: str) -> list[Section]:
         if not body:
             continue
         title = ITEM_NAMES.get(item, m.group(2).strip()[:80] or f"Item {item}")
-        sections.append(Section(item=item, title=title, text=body))
+        found.append((m.start(), Section(item=item, title=title, text=body)))
+
+    # 同一个 Item 可能命中多次：交叉引用页（"Item 4. Mine Safety ... 21"）、
+    # 10-K Summary 索引、以及正文本身。只保留正文那份 —— 也就是最长的那份。
+    best: dict[str, tuple[int, Section]] = {}
+    for pos, sec in found:
+        cur = best.get(sec.item)
+        if cur is None or len(sec.text) > len(cur[1].text):
+            best[sec.item] = (pos, sec)
+    sections = [sec for _, sec in sorted(best.values(), key=lambda x: x[0])]
     if not sections:
         sections.append(Section(item="0", title="Full Text", text=text.strip()))
     return sections

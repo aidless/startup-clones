@@ -86,9 +86,26 @@ class BM25Index:
         return out
 
 
-def coverage(query: str, hit: Hit) -> float:
-    """查询词被命中的比例 —— 用来判「答非所问」。"""
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def coverage(query: str, hit: Hit, idf=None) -> float:
+    """查询词被命中的比例 —— 用来判「答非所问」。
+
+    分母只算「可能被命中」的词：中文单字在英文语料里按构造就不可能命中，
+    把它们算进分母会让中文提问永远判成证据不足（真实 10-K 上实测：上限 ~20%）。
+    拉丁词一个都没有时才退回全部词（纯中文且没走词表扩写的场景）。
+    """
     q = set(tokenize(query))
     if not q:
         return 0.0
-    return len(q & set(hit.matched + tokenize(hit.chunk.text))) / len(q)
+    latin = {t for t in q if not CJK_RE.search(t) and len(t) >= 2}
+    denom = latin or q
+    appear = set(hit.matched) | set(tokenize(hit.chunk.text))
+    if idf is None:
+        return len(denom & appear) / len(denom)
+    # IDF 加权：在 Apple 的 10-K 里 "apple" 遍地都是，靠它命中不能算「答上了」；
+    # "headcount"这类词才带信息量。不加权时 CEO 生日会被 Apple Arcade 那段骗过去。
+    w_all = sum(max(idf(t), 0.01) for t in denom)
+    w_hit = sum(max(idf(t), 0.01) for t in denom & appear)
+    return w_hit / w_all if w_all else 0.0

@@ -99,14 +99,29 @@ def resolve_metric(question: str) -> tuple[str, str] | None:
 
 
 def annual_series(conn: sqlite3.Connection, metric: str) -> list[Fact]:
+    """取某个指标的年报序列。
+
+    真实 companyfacts 里同一个 fy 会有多行：同一份 10-K 会同时报 FY2026/FY2025/FY2024，
+    后续 10-K 又重复报上一年的比较数，还有重述（restatement）。若直接按 fy 排序，
+    相邻两行可能来自不同 `end`，算出来的同比会出现 -61.5% 这种离谱数字（Apple 实测踩到）。
+    所以：每个 fy 只保留「最近申报（filed 最大）且期末（end 最大）」的那一行。
+    """
     tags = METRIC_ALIASES.get(metric, [metric])
     for tag in tags:
         rows = conn.execute(
-            "SELECT tag,fy,val,unit,form,end FROM facts WHERE tag=? AND fp='FY' ORDER BY fy",
+            "SELECT tag,fy,val,unit,form,end,filed FROM facts WHERE tag=? AND fp='FY'",
             (tag,),
         ).fetchall()
-        if rows:
-            return [Fact(r["tag"], r["fy"], r["val"], r["unit"], r["form"], r["end"]) for r in rows]
+        if not rows:
+            continue
+        best: dict[int, sqlite3.Row] = {}
+        for r in rows:
+            cur = best.get(r["fy"])
+            key = (r["filed"] or "", r["end"] or "")
+            if cur is None or key > (cur["filed"] or "", cur["end"] or ""):
+                best[r["fy"]] = r
+        return [Fact(r["tag"], r["fy"], r["val"], r["unit"], r["form"], r["end"])
+                for _, r in sorted(best.items())]
     return []
 
 

@@ -12,9 +12,10 @@ from dataclasses import dataclass, field
 
 from . import facts as F
 from .edgar import Chunk
+from . import glossary
 from .index import BM25Index, coverage, tokenize
 
-MIN_COVERAGE = 0.34
+MIN_COVERAGE = 0.45
 # 拒答话术必须统一：客户看到两种不同的"答不了"会以为是 bug
 REFUSAL = "文件里没有足够证据回答这个问题（证据不足，不作答）。"
 
@@ -59,6 +60,21 @@ class Response:
         return "\n".join(lines)
 
 
+YEAR_RE = re.compile(r"^(19|20)\d{2}$")
+
+
+def has_quantity(sentence: str) -> bool:
+    """句子里有没有「量」——年份不算。否则「2026 compared to 2025」会给任何句子加分。"""
+    for raw in re.findall(r"\d[\d,.]*", sentence):
+        if YEAR_RE.match(raw.strip(".,")):
+            continue
+        return True
+    return False
+
+
+QUANTITY_RE = re.compile(r"多少|几个|几位|几名|多少人|how many|number of|how much", re.I)
+
+
 def _sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?。！？])\s+", text)
     return [p.strip() for p in parts if p.strip()]
@@ -84,10 +100,10 @@ class Answerer:
             return Response(kind="metric", status="no_data",
                             text=f"文件里没有 {metric} 的年度数据（XBRL 未披露）。")
         last = series[-1]
-        changes = F.yoy(series)
+        changes = F.yoy(series)[-3:]          # 只展示近三年，30 年全列等于没回答
         seg = "、".join(f"FY{fy} {c:+.1%}" for fy, c in changes) or "无同比（仅一年）"
         text = (f"{metric}：FY{last.fy} 为 {F.fmt_money(last.val, last.unit)}；"
-                f"同比变化 {seg}。")
+                f"近三年同比 {seg}。")
         cites = [
             Citation(ref=f"XBRL:{f.tag}@FY{f.fy}", quote=f"{f.tag} = {f.val:,.0f} {f.unit}", kind="xbrl")
             for f in series[-3:]
@@ -97,30 +113,47 @@ class Answerer:
 
     # ---- 文本通道 ----
     def _excerpt_answer(self, question: str, k: int = 5) -> Response:
-        hits = self.index.search(question, k=k)
+        # 跨语言召回：中文问句先扩成英文关键词，否则 BM25 零命中（真实 10-K 上必然发生）
+        q_expanded = glossary.expand(question)
+        hits = self.index.search(q_expanded, k=k)
         if not hits:
             return Response(kind="excerpt", status="insufficient_evidence",
                             text=REFUSAL, citations=[])
         best = hits[0]
-        cov = coverage(question, best)
+        cov = coverage(q_expanded, best, idf=self.index._idf)
         if cov < MIN_COVERAGE:
             return Response(kind="excerpt", status="insufficient_evidence",
                             text=REFUSAL + f"（最相关段落只覆盖 {cov:.0%} 的查询词）",
                             citations=[])
 
-        q = set(tokenize(question))
+        q = set(tokenize(q_expanded))
+        wants_number = bool(QUANTITY_RE.search(question))
+
+        # 「多少/几个」类问题要看多段：正确答案常在别的段落（问员工数，命中段讲的是
+        # 研发费用里的 headcount 成本）。所以按句子打分，跨 top-3 段落挑带数字的句子。
         scored = []
-        for i, sent in enumerate(_sentences(best.chunk.text)):
-            overlap = len(q & set(tokenize(sent)))
-            if overlap:
-                scored.append((overlap, i, sent))
-        scored.sort(key=lambda x: (-x[0], x[1]))
-        keep = sorted(scored[:2], key=lambda x: x[1])
-        quote = " ".join(s[2] for s in keep) or best.chunk.text[:400]
+        pool = hits[:3] if wants_number else hits[:1]
+        for rank, h in enumerate(pool):
+            for i, sent in enumerate(_sentences(h.chunk.text)):
+                overlap = len(q & set(tokenize(sent)))
+                if not overlap:
+                    continue
+                if wants_number and not has_quantity(sent):
+                    continue     # 问「多少」时，没有量的句子直接不参选
+                bonus = 2.0 if wants_number else 0.0
+                scored.append((overlap + bonus - 0.1 * rank, rank, i, sent, h.chunk.ref))
+        if not scored:
+            quote, ref = best.chunk.text[:400], best.chunk.ref
+        else:
+            scored.sort(key=lambda x: (-x[0], x[1], x[2]))
+            top_rank = scored[0][1]
+            picked = sorted([s for s in scored if s[1] == top_rank][:2], key=lambda x: x[2])
+            quote = " ".join(s[3] for s in picked)
+            ref = scored[0][4]
 
         return Response(
             kind="excerpt", status="ok", text=quote,
-            citations=[Citation(ref=best.chunk.ref, quote=quote, kind="text")],
+            citations=[Citation(ref=ref, quote=quote, kind="text")],
             confidence=round(cov, 3),
         )
 
