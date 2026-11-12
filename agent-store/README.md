@@ -84,3 +84,52 @@ cli.py       demo
 - 平台抽成比例是账单参数，不是合同；真实系统需要开发者协议版本化并在账单上标注协议版本。
 
 MIT License.
+
+## 真实数据：16 个 MCP server 的清单审查
+
+`scripts/fetch_mcp_servers.py` 从 GitHub 按 `mcp-server in:name` 取星标最高的仓库，
+拉 `package.json` 与 `README.md`（各 6000 字上限），剔除 3 个 awesome-* 清单仓库，
+留下 **16 个真实 server**。`scripts/real_manifests.py` 对每份跑入市审查。
+
+### 结论一：权限声明在这个生态里不存在
+
+| 指标 | 结果 |
+|---|---|
+| 清单里有任何权限字段（permissions/capabilities/scopes/mcp） | **0 / 16** |
+| 文档/依赖显示需要 API 密钥 | 13 / 16 |
+| 需要写文件 | 1 / 16 |
+| 版本可固定（x.y.z） | 9 / 16 |
+
+零声明不是「我们样本少」——这 16 个加起来超过 10 万星标，包括 GitHub、
+Cloudflare、Notion、Firecrawl 的官方 server。买家在装这些东西时，
+**没有任何机器可读的东西告诉他这个 agent 能不能读你的文件、能不能拿你的 token。**
+
+这条事实直接决定商店该做什么：不是托管，不是计费，而是**替买家把没写的东西补出来**，
+并且让「补出来的结论」进入安装决策。
+
+### 结论二：分级要按证据强度，不按关键词数量
+
+真实跑出来的等级分布：**high 5 / medium 11**。
+
+- high 的 5 家（shadcn-ui / apify / browserbase / financial-datasets / firecrawl）
+  都在 README 里写出了具体环境变量名（`BROWSERBASE_API_KEY`、`FIRECRAWL_API_KEY`…）——
+  这是硬证据：它一定要拿凭据去调外部服务。
+- 其余只出现 `token`/`auth` 这类泛词，判 medium：可能是讲别人的东西，也可能是自述需求。
+
+如果一上来按关键词数量定 high，16 份全是 high，审查结论就没有区分度了。
+
+### 已修的两个假阳性（都是真实数据逼出来的）
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| 9 份清单被判「要写文件」 | `"edit" in text` 命中了 `credits` 里的 edit | 关键词改词边界匹配（`(?<![a-z0-9])kw(?![a-z0-9])`），写文件降到 1 份 |
+| GitHub 官方 server 被判「要动钱」 | `checkout` 命中了 `actions/checkout` | 从付款词表删掉 `checkout`，付款需求降到 0 份 |
+
+假阳性比漏报更贵：一份把 GitHub 说成收款工具的审查报告，会让整份报告没人相信。
+
+### 重跑
+
+```bash
+python3 scripts/fetch_mcp_servers.py 20   # 抓清单（写 data/raw/，已 gitignore）
+python3 scripts/real_manifests.py         # 审查 + 打印结论表
+```

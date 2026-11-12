@@ -31,8 +31,8 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 | filing-lens | Apple / Microsoft FY2026 10-K + XBRL（`scripts/fetch_edgar.py`） | 8/8 真实问答回归；6 个真实缺陷已修 |
 | audit-loop | 同上 XBRL 的 8–9 年财务序列（`scripts/real_analytics.py`） | Apple 报 2 条例外、Microsoft 零例外 |
 | agent-inbox | SEC CORRESP 往来函件（`scripts/fetch_sec_corresp.py`） | 3 封真实函件、1 线程、2 条缺口如实报出 |
-| cruxline | 自造 8 条轨迹 | 机制可信，**语料未接真实** |
-| agent-store | 自造 6 个 agent 清单 | 同上 |
+| cruxline | 60 条真实 dsh 会话轨迹（`scripts/export_dsh_traces.py`） | 58/60 通过；2 条失败是真缺陷 |
+| agent-store | 16 个真实 MCP server 清单（`scripts/fetch_mcp_servers.py`） | 16/16 无权限声明；2 个假阳性已修 |
 | geo-radar | 自造提示词集 | 机制可信，**需要付费采样才能算真** |
 
 `data/` 全部 gitignore —— 仓库里只有代码与测试，原始语料用脚本按需拉回。
