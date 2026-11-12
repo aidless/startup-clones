@@ -33,7 +33,7 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 | agent-inbox | SEC CORRESP 往来函件（`scripts/fetch_sec_corresp.py`） | 3 封真实函件、1 线程、2 条缺口如实报出 |
 | cruxline | 60 条真实 dsh 会话轨迹（`scripts/export_dsh_traces.py`） | 58/60 通过；2 条失败是真缺陷 |
 | agent-store | 16 个真实 MCP server 清单（`scripts/fetch_mcp_servers.py`） | 16/16 无权限声明；2 个假阳性已修 |
-| geo-radar | 本机 Ollama 3 模型 × 8 个买家问题（`scripts/real_geo.py`） | 第一名稳定（极差 5.6pt）、第二名人选换模型就变 |
+| geo-radar | 本机 3 小模型 + Magpie 3 强模型 × 8 问（`scripts/real_geo.py`） | 小模型把 Expensify 排第一、强模型一致排 Ramp；跨档位混算等于造假 |
 
 `data/` 全部 gitignore —— 仓库里只有代码与测试，原始语料用脚本按需拉回。
 

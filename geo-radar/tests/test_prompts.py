@@ -70,3 +70,16 @@ def test_ollama_empty_response_raises(monkeypatch):
     with pytest.raises(RuntimeError) as ei:
         OllamaProvider().complete("q", model="qwen3:8b")
     assert "空文本" in str(ei.value)
+
+
+def test_magpie_provider_wiring(monkeypatch):
+    """本机网关不校验 token，但客户端要求非空 key；超时默认要比 SDK 更宽。"""
+    from georadar.providers import OpenAICompatProvider, build_provider
+
+    monkeypatch.delenv("MAGPIE_API_KEY", raising=False)
+    monkeypatch.delenv("MAGPIE_BASE_URL", raising=False)
+    p = build_provider("magpie", ["Ramp"])
+    assert isinstance(p, OpenAICompatProvider)
+    assert p.base_url == "http://127.0.0.1:3425/v1"
+    assert p.api_key == "local"
+    assert p.timeout >= 120

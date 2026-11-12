@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from georadar.extract import find_mentions  # noqa: E402
 from georadar.metrics import brand_stats  # noqa: E402
-from georadar.providers import OllamaProvider  # noqa: E402
+from georadar.providers import build_provider  # noqa: E402
 
 BRANDS = ["Ramp", "Brex", "Mercury", "Expensify", "Bill.com", "Navan",
           "Divvy", "Airbase", "Stampli", "Coupa"]
@@ -36,16 +36,43 @@ PROMPTS = [
     "Which vendor and spend tools should a Series A company evaluate?",
 ]
 
-MODELS = ["llama3.2:3b", "qwen2.5:7b", "qwen3:8b"]
+LOCAL_MODELS = ["llama3.2:3b", "qwen2.5:7b", "qwen3:8b"]
+# Magpie 网关上的免费/低价模型（本机 127.0.0.1:3425）：
+# deepseek-v4.1-flash 与 hy4free、ernie-5.5-flash-preview:free 是 0 价；
+# deepseek-v4.1-flash-max / gpt-6.1-terra 是低价档，用来做「强模型」对照。
+MAGPIE_MODELS = ["deepseek-v4.1-flash", "hy4free",
+                 "openrouter/baidu/ernie-5.5-flash-preview:free",
+                 "deepseek-v4.1-flash-max", "gpt-6.1-terra"]
 
 
 def main() -> int:
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 else len(PROMPTS)
+    argv = sys.argv[1:]
+    limit = len(PROMPTS)
+    kind = "ollama"
+    models = LOCAL_MODELS
+    for a in argv:
+        if a.startswith("--provider="):
+            kind = a.split("=", 1)[1]
+        elif a.startswith("--models="):
+            models = a.split("=", 1)[1].split(",")
+        elif a.isdigit():
+            limit = int(a)
     prompts = PROMPTS[:limit]
-    provider = OllamaProvider()
+    provider = build_provider(kind, BRANDS)
+    print(f"provider={kind} models={models}", flush=True)
+    out = ROOT / f"data/geo_real_{kind}.json"
+    # 支持分批跑：已跑过的模型结果保留，重跑只覆盖同名模型
     result: dict = {"brands": BRANDS, "prompts": prompts, "models": {}}
+    if out.exists():
+        try:
+            prev = json.loads(out.read_text())
+            if prev.get("brands") == BRANDS:
+                result["models"] = prev.get("models", {})
+                print(f"接续已有结果：{sorted(result['models'])}", flush=True)
+        except json.JSONDecodeError:
+            pass
 
-    for model in MODELS:
+    for model in models:
         print(f"\n=== {model} ({len(prompts)} 条提示词) ===", flush=True)
         mentions = []
         answers = []
@@ -72,7 +99,6 @@ def main() -> int:
             print(f"    {row['brand']:<12}{row['mentions']:>3} 次  份额 {row['share']:.1%}  "
                   f"平均位次 {row['avg_position']}", flush=True)
 
-    out = ROOT / "data/geo_real.json"
     out.write_text(json.dumps(result, ensure_ascii=False, indent=1))
     print(f"\n写入 {out}")
 

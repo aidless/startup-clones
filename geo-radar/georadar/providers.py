@@ -152,6 +152,15 @@ class OllamaProvider(Provider):
 def build_provider(kind: str, brands: list[str], **kw) -> Provider:
     if kind == "mock":
         return MockProvider(brands, seed=int(kw.get("seed", 7)))
+    if kind == "magpie":
+        # 本机 Magpie 网关（127.0.0.1:3425），聚合了一批免费/低价模型。
+        # 网关默认不校验 token，但 OpenAI 兼容客户端要求非空，给个占位值。
+        return OpenAICompatProvider(
+            api_key=kw.get("api_key") or os.environ.get("MAGPIE_API_KEY") or "local",
+            base_url=kw.get("base_url") or os.environ.get("MAGPIE_BASE_URL",
+                                                          "http://127.0.0.1:3425/v1"),
+            # 网关会排队，60s 默认超时对免费档不够（hy4free 实测 timed out）
+            timeout=float(kw.get("timeout") or os.environ.get("GEO_TIMEOUT", "180")))
     if kind == "ollama":
         return OllamaProvider(host=kw.get("base_url") or kw.get("host"))
     if kind in {"openai", "openai-compat", "deepseek", "kimi", "vllm"}:
