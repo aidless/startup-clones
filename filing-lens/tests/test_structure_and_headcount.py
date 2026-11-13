@@ -112,3 +112,19 @@ def test_chinese_question_with_mapped_concept_is_answered():
     a = _answerer(["Tariffs increased our cost of sales in the current fiscal year. " * 3])
     r = a.ask("关税对成本有什么影响？")
     assert r.status == "ok" and r.citations
+
+
+def test_metric_citation_points_at_the_year_in_the_answer():
+    """接口通常只展示第一条引用——排在第一位的那年必须是答案里写的那年。"""
+    conn = sqlite3.connect(":memory:")
+    payload = {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+        {"form": "10-K", "fp": "FY", "fy": 2024, "start": "2023-01-01", "end": "2023-12-31",
+         "filed": "2024-02-01", "val": 100},
+        {"form": "10-K", "fp": "FY", "fy": 2025, "start": "2024-01-01", "end": "2024-12-31",
+         "filed": "2025-02-01", "val": 130},
+    ]}}}}}
+    facts.load_companyfacts(payload, db_path=":memory:")
+    a = answer.Answerer([], facts.load_companyfacts(payload, db_path=":memory:"))
+    r = a.ask("营收多少")
+    assert "FY2025" in r.text
+    assert r.citations[0].ref == "XBRL:Revenues@FY2025", r.citations[0].ref

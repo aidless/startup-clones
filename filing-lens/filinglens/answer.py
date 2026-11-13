@@ -138,7 +138,8 @@ class Answerer:
                 f"近三年同比 {seg}。")
         cites = [
             Citation(ref=f"XBRL:{f.tag}@FY{f.fy}", quote=f"{f.tag} = {f.val:,.0f} {f.unit}", kind="xbrl")
-            for f in series[-3:]
+            # 最新一年的引用排第一：接口只展示第一条时，不能让人以为答案出自三年前
+            for f in reversed(series[-3:])
         ]
         return Response(kind="metric", status="ok", text=text, citations=cites,
                         confidence=1.0 if len(series) >= 2 else 0.7)
