@@ -6,6 +6,7 @@ SEC companyfacts JSON 是免费的、官方的、结构化的。它能回答「�
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -161,5 +162,24 @@ def fmt_money(v: float, unit: str = "USD") -> str:
     return f"{v:,.0f} {unit}"
 
 
+_READ_ONLY_START = re.compile(r"^\s*(?:select|with|explain)\b", re.I)
+_WRITE_KEYWORD = re.compile(
+    r"\b(?:insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|"
+    r"reindex|analyze|begin|commit|rollback|savepoint|release|truncate)\b", re.I)
+_SQL_STRING = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|\[[^\]]*\]|`[^`]*`")
+
+
 def sql_query(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+    """只读查询。传进来的 SQL 只允许读 —— 写语句一律拒。
+
+    原先直接 `conn.execute(sql, params)`：`DROP TABLE facts` 会执行成功，
+    一条来自问题文本或外部清单的 SQL 就能清掉整张事实表。
+    """
+    body = _SQL_STRING.sub("''", sql or "")          # 先抹掉字符串字面量再判关键词
+    if not _READ_ONLY_START.match(body):
+        raise ValueError(f"只允许只读查询（SELECT / WITH / EXPLAIN），收到：{sql[:60]!r}")
+    if _WRITE_KEYWORD.search(body):
+        raise ValueError(f"SQL 里出现写操作关键字，拒绝执行：{sql[:60]!r}")
+    if ";" in body.rstrip().rstrip(";"):
+        raise ValueError(f"只允许单条语句：{sql[:60]!r}")
     return conn.execute(sql, params).fetchall()

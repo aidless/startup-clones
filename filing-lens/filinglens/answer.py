@@ -106,13 +106,39 @@ RESPECTIVELY_RE = re.compile(
     r"(\d[\d,]*(?:\.\d+)?)\s+and\s+(\d[\d,]*(?:\.\d+)?)\s+(?:[a-z\-\s]{0,24})?employees", re.I)
 
 
+def _is_bare_year(token: str) -> bool:
+    """`2025` / `2024` 是年份；`2,024`（有千分位）是真人数。"""
+    raw = token.strip()
+    if "," in raw and raw.replace(",", "").isdigit() and len(raw) > 4:
+        return False
+    digits = raw.replace(",", "")
+    return digits.isdigit() and len(digits) == 4 and 1900 <= int(digits) <= 2099
+
+
+# 「X and Y employees」中间只允许出现人数修饰语；出现这些词说明 X/Y 是年份或金额。
+_NOT_HEADCOUNT_GAP = re.compile(r"\b(?:as|result|of|fiscal|year|years|ended|december|january|"
+                                r"february|march|april|may|june|july|august|september|october|"
+                                r"november|revenue|expense|cost|respectively\b.*)", re.I)
+
+
 def headcount_number(sentence: str) -> str | None:
-    """从句子里取人数。双年度并列时取第一个（那是本期）。"""
-    pair = RESPECTIVELY_RE.search(sentence)
-    if pair:
-        return pair.group(1)
+    """从句子里取人数。双年度并列时取第一个（那是本期）。
+
+    年份必须挡住：TI 的原句「As of December 31, 2025 and 2024, as a result of
+    employees' elections…」会被 `RESPECTIVELY_RE` 读成「2025 名员工」。
+    """
+    for pair in RESPECTIVELY_RE.finditer(sentence):
+        a, b = pair.group(1), pair.group(2)
+        if _is_bare_year(a) or _is_bare_year(b):
+            continue
+        gap = sentence[pair.start(2) + len(b):pair.end()]
+        if _NOT_HEADCOUNT_GAP.search(gap):
+            continue
+        return a
     m = HEADCOUNT_RE.search(sentence)
-    return m.group(0) if m else None
+    if m and not _is_bare_year(m.group(1)):
+        return m.group(0)
+    return None
 
 
 # 问「比例」的问题不能走金额通道：毛利率是百分数，GrossProfit 是美元。

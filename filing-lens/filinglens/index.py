@@ -88,6 +88,21 @@ class BM25Index:
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
+# 概念覆盖率里「不能单独作证」的词。
+# `full-time` 会被分词器切成 full / time，于是任何含 "time"（"from time to time"）
+# 的段落都算讲到了员工——实测 419 个 chunk 里 39 个拿满覆盖，Item 1¶35 通篇没有员工词。
+# `equivalent` 同病："cash equivalents" 到处都有。（这些词按 idf 也拦不住：
+# 在 Apple 的 10-K 里 time 的 idf 是 2.8，比 employees 的 3.2 只低一点。）
+_AMBIGUOUS_GROUP_TOKENS = frozenset({
+    "full", "time", "part", "equivalent", "number", "total", "based",
+    "person", "people", "team", "member", "members", "staff", "year", "years",
+})
+
+
+def _concept_terms(term: str) -> list[str]:
+    """一个概念词条里可以作为证据的 token。全是歧义词就返回空 —— 该词条作废。"""
+    return [t for t in tokenize(term) if len(t) >= 2 and t not in _AMBIGUOUS_GROUP_TOKENS]
+
 
 def coverage(query: str, hit: Hit, idf=None, groups: list[list[str]] | None = None) -> float:
     """查询词被命中的比例 —— 用来判「答非所问」。
@@ -105,7 +120,7 @@ def coverage(query: str, hit: Hit, idf=None, groups: list[list[str]] | None = No
         for g in groups:
             # 词表里的词可能带连字符（full-time），而分词器按 [a-z0-9]+ 切，
             # 不先拆开就永远匹配不上，整个概念被判 0。
-            terms = [tok for term in g for tok in tokenize(term) if len(tok) >= 2]
+            terms = [tok for term in g for tok in _concept_terms(term)]
             if not terms:
                 continue
             total += 1
