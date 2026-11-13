@@ -1,7 +1,7 @@
 """核心契约测试：没有引用就没有答案。"""
 import pytest
 
-from filinglens import edgar, facts as F, fixtures
+from filinglens import answer, edgar, facts as F, fixtures
 from filinglens.answer import Answerer
 
 
@@ -117,3 +117,10 @@ def test_single_latin_token_cannot_carry_an_unbridgeable_chinese_question():
 
     good = a.ask("董事会有多少人")
     assert good.status == "ok" and good.citations
+
+
+def test_ratio_words_do_not_hijack_qualitative_questions(ans):
+    """回归：英文线索按词边界匹配——concentration 里含 ratio，"margin of safety" 也不是在问比例。"""
+    assert not answer.wants_ratio("top customers concentration revenue")
+    r = ans.ask("margin of safety considerations lidar")
+    assert r.kind in ("excerpt",) or r.status == "insufficient_evidence"

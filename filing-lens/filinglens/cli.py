@@ -68,6 +68,9 @@ def cmd_metric(args: argparse.Namespace) -> int:
     for f in series:
         print(f"FY{f.fy}  {F.fmt_money(f.val, f.unit)}  [{f.tag}]")
     for fy, chg in F.yoy(series):
+        if chg is None:
+            print(f"  FY{fy} 不可比（上年为负/零）")
+            continue
         print(f"  YoY FY{fy}: {chg:+.1%}")
     return 0
 

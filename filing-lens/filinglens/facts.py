@@ -125,11 +125,18 @@ def annual_series(conn: sqlite3.Connection, metric: str) -> list[Fact]:
     return []
 
 
-def yoy(series: list[Fact]) -> list[tuple[int, float]]:
-    out = []
+def yoy(series: list[Fact]) -> list[tuple[int, float | None]]:
+    """同比变化。上年为负或零时返回 None。
+
+    用 abs 做分母能把 Intel 从 -18.8B 亏到 -267M 算成 "-1210.5%"，读起来像灾难，
+    但那只是「亏得少了」——负基数上的百分比变化没有经济含义，宁可标不可算。
+    """
+    out: list[tuple[int, float | None]] = []
     for prev, cur in zip(series, series[1:]):
-        if prev.val:
-            out.append((cur.fy, round((cur.val - prev.val) / abs(prev.val), 4)))
+        if prev.val > 0:
+            out.append((cur.fy, round((cur.val - prev.val) / prev.val, 4)))
+        else:
+            out.append((cur.fy, None))
     return out
 
 

@@ -107,6 +107,31 @@ def headcount_number(sentence: str) -> str | None:
     return m.group(0) if m else None
 
 
+# 问「比例」的问题不能走金额通道：毛利率是百分数，GrossProfit 是美元。
+# 表里只有几对关系是公开口径下无歧义的（分子/分母都来自 XBRL）。
+RATIO_CUES_CJK = ("比例", "占比", "占收入", "占营收", "率")
+# 英文线索必须按词边界匹配：concentration 里含有 ratio，
+# 用子串判断会把 "top customers concentration revenue" 当成在问比例。
+RATIO_CUES_EN = re.compile(r"\b(?:margin|ratio|percent|percentage)\b|%", re.I)
+
+
+def wants_ratio(question: str) -> bool:
+    return any(c in question for c in RATIO_CUES_CJK) or bool(RATIO_CUES_EN.search(question))
+
+
+# 每对关系写成（标签, 分子, 分母, 判定函数）——判定函数吃小写问题，返回是否在问这个比例。
+# 关键词只挑「毛利/净利/研发 + 比例线索」，避免把"毛利率"以外的金额问题抢过来。
+RATIO_PAIRS = [
+    ("毛利率", "gross_profit", "revenue",
+     lambda q: ("毛利" in q or "gross margin" in q) and ("率" in q or "margin" in q)),
+    ("净利率", "net_income", "revenue",
+     lambda q: ("净利" in q or "net margin" in q) and ("率" in q or "margin" in q)),
+    ("研发投入占收入", "r_and_d", "revenue",
+     lambda q: ("研发" in q or "r&d" in q or "research and development" in q)
+               and ("占" in q or "比例" in q or "率" in q)),
+]
+
+
 def _sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?。！？])\s+", text)
     return [p.strip() for p in parts if p.strip()]
@@ -116,6 +141,47 @@ class Answerer:
     def __init__(self, chunks: list[Chunk], facts_conn: sqlite3.Connection | None = None):
         self.index = BM25Index().add(chunks)
         self.facts = facts_conn
+
+    # ---- 比例通道（必须在金额通道之前）----
+
+    def _ratio_answer(self, question: str) -> Response | None:
+        if not self.facts or not wants_ratio(question):
+            return None
+        q = question.lower()
+        for label, num, den, matches in RATIO_PAIRS:
+            if matches(q):
+                break
+        else:
+            # 提到 margin/ratio 但在问别的东西（"margin of safety" 之类）——交回文本通道，
+            # 不能因为撞到一个词就替用户改问题。
+            return None
+        n_ser = {f.fy: f for f in F.annual_series(self.facts, num)}
+        d_ser = {f.fy: f for f in F.annual_series(self.facts, den)}
+        years = sorted(set(n_ser) & set(d_ser))[-3:]
+        if not years:
+            return Response(kind="metric", status="no_data",
+                            text=f"XBRL 里缺少 {num} 或 {den} 的年度数据，算不出{label}。")
+        rows = []
+        for fy in years:
+            n, d = n_ser[fy].val, d_ser[fy].val
+            rows.append((fy, None if not d else round(n / d, 4)))
+        seg = "、".join(f"FY{fy} {r:+.1%}" if r is not None else f"FY{fy} 不可算"
+                       for fy, r in rows)
+        last_fy, last = rows[-1]
+        if last is None:
+            return Response(kind="metric", status="no_data",
+                            text=f"{label}：FY{last_fy} 的分母为 0，算不出来。")
+        cites = [
+            Citation(ref=f"XBRL:{n_ser[last_fy].tag}@FY{last_fy}",
+                     quote=f"{n_ser[last_fy].tag} = {n_ser[last_fy].val:,.0f} {n_ser[last_fy].unit}",
+                     kind="xbrl"),
+            Citation(ref=f"XBRL:{d_ser[last_fy].tag}@FY{last_fy}",
+                     quote=f"{d_ser[last_fy].tag} = {d_ser[last_fy].val:,.0f} {d_ser[last_fy].unit}",
+                     kind="xbrl"),
+        ]
+        return Response(kind="metric", status="ok",
+                        text=f"{label}：FY{last_fy} 为 {last:.2%}（近三年 {seg}）。",
+                        citations=cites, confidence=0.9)
 
     # ---- 数字通道 ----
     def _metric_answer(self, question: str) -> Response | None:
@@ -133,7 +199,10 @@ class Answerer:
                             text=f"文件里没有 {metric} 的年度数据（XBRL 未披露）。")
         last = series[-1]
         changes = F.yoy(series)[-3:]          # 只展示近三年，30 年全列等于没回答
-        seg = "、".join(f"FY{fy} {c:+.1%}" for fy, c in changes) or "无同比（仅一年）"
+        seg = "、".join(
+            f"FY{fy} {c:+.1%}" if c is not None else f"FY{fy} 不可比（上年为负/零）"
+            for fy, c in changes
+        ) or "无同比（仅一年）"
         text = (f"{metric}：FY{last.fy} 为 {F.fmt_money(last.val, last.unit)}；"
                 f"近三年同比 {seg}。")
         cites = [
@@ -260,6 +329,9 @@ class Answerer:
         hc = self._headcount_answer(question)
         if hc is not None:
             return hc
+        ratio = self._ratio_answer(question)
+        if ratio is not None:
+            return ratio
         metric = self._metric_answer(question)
         if metric and metric.status == "ok":
             return metric
