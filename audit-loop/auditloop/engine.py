@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from .models import Finding, StepResult
+from .models import Finding, StepResult, severity_rank
 
 
 @dataclass
@@ -94,6 +94,13 @@ class AuditRun:
             lines.append(f"| {name} | {assertion} | {status} | {n} |")
         if self.findings:
             lines += ["", "## 例外清单", "", "| 程序 | 认定 | 严重度 | 对象 | 说明 |", "| --- | --- | --- | --- | --- |"]
-            for f in sorted(self.findings, key=lambda x: (-{"high": 3, "medium": 2, "low": 1}[x.severity], x.check)):
+            for f in sorted(self.findings, key=lambda x: (-severity_rank(x.severity), x.check)):
                 lines.append(f"| {f.check} | {f.assertion} | {f.severity} | {f.ref} | {f.detail} |")
+        failed = [r for r in self.results if r.status == "error"]
+        if failed:
+            # 失败追踪必须出现在交付物里：只有 status=error 一行时，
+            # 复核人无从判断是数据脏还是程序 bug，只能重跑一遍。
+            lines += ["", "## 失败程序追踪", ""]
+            for r in failed:
+                lines += [f"### {r.name} · {r.error}", "", "```", (r.trace or "(无追踪)").strip(), "```", ""]
         return "\n".join(lines)

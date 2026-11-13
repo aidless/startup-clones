@@ -43,13 +43,24 @@ class Invoice:
     customer: str
     amount: float
     issue_date: date
-    due_date: date
+    # AR 导出里到期日经常空着（老客户没录合同条款）。缺到期日不是崩溃，是完整性例外。
+    due_date: date | None = None
     shipped_date: date | None = None
     revenue_date: date | None = None
 
     @property
     def recognized(self) -> bool:
         return self.revenue_date is not None
+
+
+SEVERITIES = ("high", "medium", "low")
+# 未知严重度按 medium 排序：数字大不大是次要的，**不许让一个拼错的字符串崩掉整张底稿**。
+SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1}
+UNKNOWN_SEVERITY_RANK = 2
+
+
+def severity_rank(sev: str) -> int:
+    return SEVERITY_RANK.get(sev, UNKNOWN_SEVERITY_RANK)
 
 
 @dataclass
@@ -70,6 +81,9 @@ class StepResult:
     findings: list[Finding] = field(default_factory=list)
     rows_examined: int = 0
     error: str = ""
+    # 失败追踪是排查的唯一线索，必须显式声明成字段并进底稿；
+    # 原实现挂在未声明的属性上，底稿与 markdown 都不读，等于扔掉。
+    trace: str = ""
 
     @property
     def high(self) -> int:

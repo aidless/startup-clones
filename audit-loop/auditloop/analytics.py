@@ -2,7 +2,8 @@
 
 这是审计里最能抓到「收入被做高」的一类程序，因为它不需要逐笔抽凭：
 收入涨 5%、应收账款涨 40%，两句话放在一起就说明有问题。
-所有判断都以「多年趋势」为准，单年波动不下结论。
+所有判断都**逐年**做（相邻两年一比），单年噪声靠阈值挡，不靠「连续两年」——
+审计现场最常见的就是「某一年突然出现大背离」，要求连续两年才报会把最该看的那年漏掉。
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 
 from .models import Finding, VALUATION, EXISTENCE
 
-# 阈值：都是「百分点」，且只在连续两年都同向时才报，避免单年噪声
+# 阈值：都是「百分点」/ 比率，逐年判；单年波动由阈值本身过滤
 RECEIVABLE_GAP_PP = 20.0      # 应收增速 - 收入增速
 MARGIN_SHIFT_PP = 3.0         # 毛利率变动
 CASH_CONVERSION_DROP = 0.10   # 经营现金流/收入 的绝对下滑
@@ -31,8 +32,18 @@ class Series:
         return sorted(self.revenue)
 
 
-def _pct(cur: float, prev: float) -> float | None:
-    if not prev:
+def _num(v: float | None) -> float | None:
+    """把 None / 非数值挡在外面。
+
+    导出表里某年缺列是常态；原实现让 None 一路进到除法，直接 TypeError，
+    而同模块的 cash_conversion 又静默跳过 —— 同一份脏数据两种命运。
+    """
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _pct(cur: float | None, prev: float | None) -> float | None:
+    cur, prev = _num(cur), _num(prev)
+    if cur is None or prev is None or not prev:
         return None
     return (cur - prev) / abs(prev) * 100
 
@@ -44,8 +55,8 @@ def revenue_vs_receivables(s: Series) -> list[Finding]:
         return out
     common = sorted(set(s.revenue) & set(s.receivables))
     for prev_y, cur_y in zip(common, common[1:]):
-        rg = _pct(s.revenue[cur_y], s.revenue[prev_y])
-        ag = _pct(s.receivables[cur_y], s.receivables[prev_y])
+        rg = _pct(s.revenue.get(cur_y), s.revenue.get(prev_y))
+        ag = _pct(s.receivables.get(cur_y), s.receivables.get(prev_y))
         if rg is None or ag is None:
             continue
         gap = ag - rg
@@ -68,8 +79,9 @@ def gross_margin_trend(s: Series) -> list[Finding]:
     common = sorted(set(s.revenue) & set(s.gross_profit))
     margins = []
     for y in common:
-        if s.revenue[y]:
-            margins.append((y, s.gross_profit[y] / s.revenue[y] * 100))
+        rev, gp = _num(s.revenue.get(y)), _num(s.gross_profit.get(y))
+        if rev and gp is not None:
+            margins.append((y, gp / rev * 100))
     for (py, pm), (cy, cm) in zip(margins, margins[1:]):
         shift = cm - pm
         if abs(shift) > MARGIN_SHIFT_PP:
@@ -88,11 +100,18 @@ def cash_conversion(s: Series) -> list[Finding]:
     if not s.cfo:
         return out
     common = sorted(set(s.revenue) & set(s.cfo))
-    ratios = [(y, s.cfo[y] / s.revenue[y]) for y in common if s.revenue[y]]
+    ratios = []
+    for y in common:
+        rev, cfo = _num(s.revenue.get(y)), _num(s.cfo.get(y))
+        if rev and cfo is not None:
+            ratios.append((y, cfo / rev))
     for (py, pr), (cy, cr) in zip(ratios, ratios[1:]):
         absolute = pr - cr
-        relative = absolute / pr if pr else 0.0
-        if absolute > CASH_CONVERSION_DROP or relative > CASH_CONVERSION_DROP_REL:
+        # 相对变化必须除 |pr|：pr<0 时（经营现金流为负）除以负数会把「改善」算成
+        # 「+60% 下滑」。方向由 absolute 的正负决定，量级由 |pr| 归一。
+        relative = absolute / abs(pr) if pr else 0.0
+        dropped = absolute > 0
+        if dropped and (absolute > CASH_CONVERSION_DROP or relative > CASH_CONVERSION_DROP_REL):
             out.append(Finding(
                 check="analytics.cash_conversion", assertion=VALUATION,
                 ref=f"FY{cy}", severity="medium",

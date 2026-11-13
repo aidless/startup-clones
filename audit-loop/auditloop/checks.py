@@ -82,10 +82,21 @@ class AgingBucket:
 BUCKETS = [("current", None, 0), ("1-30", 1, 30), ("31-60", 31, 60), ("61-90", 61, 90), (">90", 91, None)]
 
 
+UNKNOWN_DUE_LABEL = "无到期日"
+
+
 def ar_aging(invoices: list[Invoice], as_of: date) -> list[AgingBucket]:
-    """按到期日计算逾期天数。未到期归 current。"""
+    """按到期日计算逾期天数。未到期归 current，缺到期日单列一桶。
+
+    缺到期日的发票不进任何逾期桶：算不出账龄就报不出逾期，硬塞进 current
+    会让「未到期」这个结论凭空成立。单列一桶，让会计师一眼看到有多少笔算不了。
+    """
     out = [AgingBucket(label=lbl) for lbl, _, _ in BUCKETS]
+    out.append(AgingBucket(label=UNKNOWN_DUE_LABEL))
     for inv in invoices:
+        if inv.due_date is None:
+            out[-1].invoices.append(inv)
+            continue
         days = (as_of - inv.due_date).days
         for bucket, (_, lo, hi) in zip(out, BUCKETS):
             if lo is None:
@@ -155,9 +166,18 @@ def ar_negative_or_zero(invoices: list[Invoice]) -> list[Finding]:
 
 
 def missing_due_date(invoices: list[Invoice]) -> list[Finding]:
-    return [Finding(check="ar_completeness", assertion=COMPLETENESS, ref=i.invoice_id, severity="low",
-                    detail=f"{i.customer} 到期日早于开票日，账龄不可靠")
-            for i in invoices if i.due_date < i.issue_date]
+    """到期日缺失或倒挂 —— 两种都让账龄不可靠，但原因不同，必须分开写。"""
+    out: list[Finding] = []
+    for i in invoices:
+        if i.due_date is None:
+            out.append(Finding(check="ar_completeness", assertion=COMPLETENESS,
+                               ref=i.invoice_id, severity="medium",
+                               detail=f"{i.customer} 到期日缺失，无法计算账龄", amount=i.amount))
+        elif i.due_date < i.issue_date:
+            out.append(Finding(check="ar_completeness", assertion=COMPLETENESS,
+                               ref=i.invoice_id, severity="low",
+                               detail=f"{i.customer} 到期日早于开票日，账龄不可靠", amount=i.amount))
+    return out
 
 
 def classification_summary(entries: list[Entry]) -> dict[str, float]:

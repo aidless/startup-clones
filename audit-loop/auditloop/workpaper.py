@@ -13,6 +13,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .engine import AuditRun
+from .models import severity_rank
 
 HEAD_FILL = PatternFill("solid", fgColor="1F2937")
 HEAD_FONT = Font(color="FFFFFF", bold=True)
@@ -44,7 +45,7 @@ def write_workpaper(run: AuditRun, path: str | Path,
     ws["A1"] = f"审计执行摘要 · {run.entity}"
     ws["A1"].font = Font(size=14, bold=True)
     ws["A2"] = f"期末 {run.period_end} · 生成于 {date.today()} · 结论 {run.status}"
-    _header(ws, 4, ["程序", "审计认定", "执行状态", "例外数", "high 例外"])
+    _header(ws, 4, ["程序", "审计认定", "执行状态", "例外数", "high 例外", "错误"])
     row = 5
     for r in run.results:
         ws.cell(row=row, column=1, value=r.name)
@@ -52,15 +53,16 @@ def write_workpaper(run: AuditRun, path: str | Path,
         ws.cell(row=row, column=3, value=r.status)
         ws.cell(row=row, column=4, value=len(r.findings))
         ws.cell(row=row, column=5, value=r.high)
+        ws.cell(row=row, column=6, value=r.error or "")
         if r.status == "error":
-            for col in range(1, 6):
+            for col in range(1, 7):
                 ws.cell(row=row, column=col).fill = SEV_FILL["high"]
         row += 1
-    _widths(ws, [26, 16, 14, 10, 12])
+    _widths(ws, [26, 16, 14, 10, 12, 46])
 
     ws2 = wb.create_sheet("例外")
     _header(ws2, 1, ["程序", "认定", "严重度", "对象", "说明", "金额"])
-    for i, f in enumerate(sorted(run.findings, key=lambda x: -{"high": 3, "medium": 2, "low": 1}[x.severity]), 2):
+    for i, f in enumerate(sorted(run.findings, key=lambda x: -severity_rank(x.severity)), 2):
         vals = [f.check, f.assertion, f.severity, f.ref, f.detail, f.amount]
         for j, v in enumerate(vals, 1):
             c = ws2.cell(row=i, column=j, value=v)
@@ -70,14 +72,22 @@ def write_workpaper(run: AuditRun, path: str | Path,
 
     ws3 = wb.create_sheet("明细")
     _header(ws3, 1, ["数据集", "行号", "内容"])
+    row_idx = 2
     if detail:
-        r = 2
         for name, rows in detail.items():
             for idx, content in enumerate(rows, 1):
-                ws3.cell(row=r, column=1, value=name)
-                ws3.cell(row=r, column=2, value=idx)
-                ws3.cell(row=r, column=3, value=str(content))
-                r += 1
+                ws3.cell(row=row_idx, column=1, value=name)
+                ws3.cell(row=row_idx, column=2, value=idx)
+                ws3.cell(row=row_idx, column=3, value=str(content))
+                row_idx += 1
+    # 失败程序的追踪进明细：摘要只放一句原因，完整栈放这里，复核时才有得看
+    for res in run.results:
+        if res.status == "error" and res.trace:
+            ws3.cell(row=row_idx, column=1, value=f"失败追踪:{res.name}")
+            ws3.cell(row=row_idx, column=2, value=0)
+            cell = ws3.cell(row=row_idx, column=3, value=res.trace.strip())
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            row_idx += 1
     _widths(ws3, [18, 8, 90])
 
     p = Path(path)
