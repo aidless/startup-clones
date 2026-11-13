@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections import Counter
 
 from .judge import (
@@ -18,12 +20,62 @@ from .judge import (
     _uses_tool,
     _within_budget,
 )
-import re
-
 from .trace import Trace
 
 REPEAT_LIMIT = 3          # 同一 (工具, 参数) 连续 3 次 = 在打转
 WRITE_TOOLS = {"write", "edit", "multiedit"}
+
+# 真实编码轨迹里改名/改文件大多走 bash：sed -i、tee -a、>> 追加。
+# 只认 write/edit/multiedit，「没读过就改」对这类原地修改完全不触发。
+#
+# 口径限定在「原地修改代码文件」：
+#   · `cat > f <<EOF` 从轨迹里无法区分新建与覆盖，新建本来不需要先读 —— 不判（假阳守卫见测试）；
+#   · 往 .md/.log 追加是生成产物，不判。
+# sed -i 的语法是 `sed -i SCRIPT FILE`，脚本在中间，所以单独按「行尾最后一个 token」取目标。
+_INPLACE_RE = re.compile(
+    r"(?:tee\s+-a\s+|(?<![0-9&])>>\s*)['\"]?(?P<path>[^\s;|&<>'\"]+)['\"]?"
+)
+_SED_INPLACE_RE = re.compile(r"\bsed\s+-i")
+_CODE_SUFFIX = {
+    ".py", ".sh", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".c", ".h",
+    ".cc", ".cpp", ".hpp", ".java", ".rb", ".php", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+}
+_NOISE_TARGETS = re.compile(r"^/dev/(?:null|stdout|stderr|tty|fd/.*)$")
+
+
+def _bash_inplace_paths(call) -> list[str]:
+    """从 bash 命令里认出被「原地修改」的代码文件。
+
+    只认 sed -i / tee -a / >> 三种，且目标后缀必须是代码或配置。
+    局限写明白：heredoc 覆盖既有文件判不了（与新建同形），宁可漏判。
+    """
+    if call.name != "bash":
+        return []
+    args = call.args if isinstance(call.args, dict) else {}
+    cmd = str(args.get("command") or "")
+    out: list[str] = []
+
+    def _keep(raw: str) -> None:
+        path = raw.strip("'\"")
+        if not path or _NOISE_TARGETS.match(path):
+            return
+        if "/" not in path and "." not in path:
+            return
+        if "." not in path:                          # 无后缀，不像文件
+            return
+        if "." + path.rsplit(".", 1)[-1] not in _CODE_SUFFIX:
+            return
+        if path not in out:
+            out.append(path)
+
+    for line in cmd.splitlines():
+        if _SED_INPLACE_RE.search(line):
+            toks = line.split()
+            if toks:
+                _keep(toks[-1])
+        for m in _INPLACE_RE.finditer(line):
+            _keep(m.group("path"))
+    return out
 
 
 def support_rubric() -> list[Criterion]:
@@ -32,7 +84,18 @@ def support_rubric() -> list[Criterion]:
 
 
 def _signature(call) -> str:
-    return f"{call.name}:{call.args}"
+    """签名的用途是「判两次调用是不是同一件没进展的事」。
+
+    dict 的 repr 依插入顺序，同一个 read(file_path=x, offset=1, limit=20)
+    换一种键序就成了另一个签名 —— 键序对调 6 次读同一文件，no_loop 记「最长重复 1 次」。
+    所以先规范化：键排序、非 JSON 类型退化为 str。
+    """
+    args = call.args if isinstance(call.args, dict) else {}
+    try:
+        canon = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        canon = repr(sorted(args.items(), key=lambda kv: str(kv[0])))
+    return f"{call.name}:{canon}"
 
 
 def _path_of(call) -> str:
@@ -66,10 +129,17 @@ def _read_before_write(t: Trace) -> tuple[float, str]:
     read: set[str] = set()
     for call in t.tool_calls:
         path = _path_of(call)
+        # bash 写盘先展开成「写了哪些文件」，再走同一套判定
+        bash_writes = _bash_inplace_paths(call)
         if call.name in WRITE_TOOLS and path:
-            if call.name == "edit" and path not in read:
+            if call.name in ("edit", "write") and path not in read and call.name == "edit":
                 return 0.0, f"未读取就编辑 {path}"
             read.add(path)
+        elif bash_writes:
+            for w in bash_writes:
+                if w not in read:
+                    return 0.0, f"未读取就原地修改 {w}（bash）"
+                read.add(w)
         elif path:
             read.add(path)
     return 1.0, "改文件前都读过"

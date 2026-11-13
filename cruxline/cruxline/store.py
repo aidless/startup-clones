@@ -29,16 +29,21 @@ def connect(path: str = ":memory:") -> sqlite3.Connection:
 def add_label(conn: sqlite3.Connection, case_id: str, labeler: str, passed: bool,
               rubric: dict | None = None, rationale: str = "") -> None:
     conn.execute(
-        "INSERT OR REPLACE INTO labels(case_id,labeler,passed,rubric,rationale,created_at) VALUES (?,?,?,?,?,?)",
+        # INSERT OR IGNORE 而非 OR REPLACE：主键含 created_at，一旦时间戳撞上，
+        # REPLACE 会静默覆盖先写的那条（同秒先 True 后 False 只剩 False，历史消失）。
+        # 判定本不可覆盖，撞上了宁可丢新行也不改写已有证据。
+        "INSERT OR IGNORE INTO labels(case_id,labeler,passed,rubric,rationale,created_at) VALUES (?,?,?,?,?,?)",
         (case_id, labeler, int(passed), json.dumps(rubric or {}, ensure_ascii=False), rationale,
-         datetime.now(timezone.utc).isoformat(timespec="seconds")),
+         # 秒级精度下同秒两次标注主键相同 → 后者覆盖前者。微秒足够拉开。
+         datetime.now(timezone.utc).isoformat(timespec="microseconds")),
     )
     conn.commit()
 
 
 def load_labels(conn: sqlite3.Connection, labeler: str) -> dict[str, bool]:
     rows = conn.execute(
-        "SELECT case_id, passed FROM labels WHERE labeler=? ORDER BY case_id", (labeler,)
+        # ORDER BY created_at：同一 case 有多条历史时，后面的覆盖前面的 —— 取最新判定
+        "SELECT case_id, passed FROM labels WHERE labeler=? ORDER BY case_id, created_at", (labeler,)
     ).fetchall()
     return {r[0]: bool(r[1]) for r in rows}
 

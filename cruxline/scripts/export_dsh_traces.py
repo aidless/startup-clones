@@ -27,6 +27,53 @@ def text_of(message: dict) -> str:
     return "\n".join(parts).strip()
 
 
+import re
+
+# 真实 2326 次调用里 83 次含 Traceback、其中 46 次原实现记 error 为空；
+# 5 次 "command not found" 全部为空 —— 依赖 error 的致命否决在真实链路大半不触发。
+# 判据按「工具自己承认失败」而不是两种字面写法：
+_ERROR_PATTERNS = [
+    re.compile(r"^\s*Traceback \(most recent call last\)", re.M),
+    re.compile(r"\bcommand not found\b|^\s*[\w.+-]+: not found\b", re.M),
+    re.compile(r"\bNo such file or directory\b"),
+    re.compile(r"\bPermission denied\b"),
+    re.compile(r"\bnpm ERR!"),
+    re.compile(r"^\s*(?:Error|ERROR|error):\s*(?!0\b)\S", re.M),
+    re.compile(r"\b(?:FAILED|FAILURES)\b"),
+    re.compile(r"\bsegmentation fault\b", re.I),
+]
+
+_EXIT_CODE_RE = re.compile(r"exit code:\s*(-?\d+)")
+# 计数式表述（"error: 0 warnings"、"0 errors"）不是失败，匹配到了也不算
+_ZERO_COUNT_RE = re.compile(r"\b0\s+(?:errors?|failures?|warnings?)\b", re.I)
+
+
+def classify_error(body: str) -> str:
+    """返回错误摘要；没有错误返回空串。
+
+    判据顺序：先看退出码（最硬的信号），再看已知失败字样。
+    "exit code: 0" 明确成功，不做后续字样匹配（测试输出里常带 error 字样）。
+    """
+    if not body:
+        return ""
+    m = _EXIT_CODE_RE.search(body)
+    if m:
+        code = int(m.group(1))
+        if code != 0:
+            return body.splitlines()[0][:200]
+        # 退出码 0 → 命令成功，后面的字样是内容不是状态
+        return ""
+    if _ZERO_COUNT_RE.search(body) and not any(
+            pat.search(_ZERO_COUNT_RE.sub("", body)) for pat in _ERROR_PATTERNS):
+        return ""
+    for pat in _ERROR_PATTERNS:
+        if pat.search(body):
+            for line in body.splitlines():
+                if line.strip():
+                    return line.strip()[:200]
+    return ""
+
+
 def export_session(path: Path, min_steps: int, limit: int) -> list[dict]:
     try:
         raw = decompress(path)
@@ -67,8 +114,7 @@ def export_session(path: Path, min_steps: int, limit: int) -> list[dict]:
                 continue
             body = text_of(msg)
             call["result"] = body[:2000]
-            if body.startswith("Error") or "exit code: " in body and "exit code: 0" not in body:
-                call["error"] = body.splitlines()[0][:200]
+            call["error"] = classify_error(body)
         elif t == "assistant/message":
             turn = data.get("turn")
             body = text_of(data.get("message") or {})
