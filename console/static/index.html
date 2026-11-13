@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>startup-clones · 六个工具</title>
+<style>
+  :root {
+    --bg:#0b0d11; --panel:#141821; --panel2:#1b202b; --line:#252c3a; --ink:#e8ebf2;
+    --dim:#8b93a5; --accent:#6ea8fe; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14.5px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { display:grid; grid-template-columns: 248px 1fr; min-height:100vh; }
+  aside { border-right:1px solid var(--line); padding:22px 16px; background:#0d1017; }
+  .brand { font-size:15px; font-weight:700; letter-spacing:.3px; margin-bottom:4px; }
+  .brand span { color:var(--accent); }
+  .tag { color:var(--dim); font-size:11.5px; margin-bottom:20px; }
+  nav button {
+    display:block; width:100%; text-align:left; background:transparent; border:0;
+    color:var(--dim); padding:9px 10px; border-radius:8px; cursor:pointer; font:inherit;
+    font-size:13.5px; margin-bottom:2px;
+  }
+  nav button:hover { color:var(--ink); background:var(--panel); }
+  nav button.on { color:var(--ink); background:var(--panel2); box-shadow: inset 2px 0 0 var(--accent); }
+  nav b { display:block; font-weight:600; }
+  nav i { display:block; font-style:normal; font-size:11.5px; color:var(--dim); margin-top:1px; }
+  main { padding:26px 30px 60px; max-width:1000px; }
+  h2 { margin:0 0 4px; font-size:19px; }
+  .lead { color:var(--dim); font-size:13px; margin-bottom:20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  input[type=text] {
+    flex:1; min-width:220px; font:inherit; color:var(--ink); background:var(--panel2);
+    border:1px solid var(--line); border-radius:8px; padding:9px 12px;
+  }
+  .btn { font:inherit; font-weight:600; cursor:pointer; background:var(--accent); color:#0b0d11;
+         border:0; border-radius:8px; padding:9px 14px; }
+  .btn.ghost { background:var(--panel2); color:var(--dim); border:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th { text-align:left; color:var(--dim); font-weight:600; font-size:12px; padding:6px 8px;
+       border-bottom:1px solid var(--line); }
+  td { padding:7px 8px; border-bottom:1px solid #1c2230; vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  .num { font-family:var(--mono); }
+  .pill { display:inline-block; font-size:11px; font-weight:700; padding:1px 8px; border-radius:999px; }
+  .pill.ok { background:var(--ok); color:#052e16; }
+  .pill.warn { background:var(--warn); color:#2a1a00; }
+  .pill.bad { background:var(--bad); color:#2c0a0a; }
+  .pill.mute { background:var(--panel2); color:var(--dim); border:1px solid var(--line); }
+  .kv { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+  .kv div { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .kv s { display:block; text-decoration:none; color:var(--dim); font-size:11.5px; }
+  .kv b { font-size:17px; font-family:var(--mono); font-weight:600; }
+  .quote { color:#c3c9d6; font-size:13px; }
+  .ref { color:var(--accent); font-family:var(--mono); font-size:12px; }
+  .cite { border-left:2px solid var(--line); padding-left:11px; margin:9px 0; }
+  .dim { color:var(--dim); font-size:12.5px; }
+  .bar { height:6px; background:var(--panel2); border-radius:3px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  .empty { color:var(--dim); font-size:13px; }
+  code { font-family:var(--mono); font-size:12.5px; color:#cbd3e1; }
+  footer { color:#5b6478; font-size:11.5px; margin-top:26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <div class="brand">startup<span>-</span>clones</div>
+    <div class="tag">六个从融资信号里抄来的工具</div>
+    <nav id="nav"></nav>
+  </aside>
+  <main id="main"><div class="card empty">载入中…</div></main>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const pct = (v) => (v * 100).toFixed(1) + "%";
+const money = (cents) => "$" + (cents / 100).toFixed(2);
+const pill = (text, kind) => `<span class="pill ${kind}">${esc(text)}</span>`;
+
+let PROJECTS = [];
+let current = null;
+
+async function get(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + " → " + r.status);
+  return r.json();
+}
+
+async function boot() {
+  PROJECTS = await get("/api/projects");
+  $("#nav").innerHTML = PROJECTS.map((p) =>
+    `<button data-id="${p.id}"><b>${esc(p.name)}</b><i>${esc(p.headline)}</i></button>`).join("");
+  for (const b of document.querySelectorAll("nav button")) {
+    b.onclick = () => open(b.dataset.id);
+  }
+  open(PROJECTS[0].id);
+}
+
+function open(id) {
+  current = id;
+  for (const b of document.querySelectorAll("nav button")) b.classList.toggle("on", b.dataset.id === id);
+  const p = PROJECTS.find((x) => x.id === id);
+  $("#main").innerHTML = `<h2>${esc(p.name)}</h2><div class="lead">${esc(p.detail)}</div>
+    <div class="card empty">运行中…</div>`;
+  RENDER[id]();
+}
+
+const RENDER = {
+  async geo() {
+    const [d, more] = await Promise.all([get("/api/geo?samples=6"), Promise.resolve(null)]);
+    const rows = d.brands.map((b) => `
+      <tr>
+        <td><b>${esc(b.brand)}</b></td>
+        <td class="num">${b.mentions}</td>
+        <td class="num">${pct(b.share)}<div class="bar"><i style="width:${b.share * 100}%"></i></div></td>
+        <td class="num">${b.avg_position.toFixed(2)}</td>
+        <td class="num">${b.prompts_seen}/${d.prompts.length}</td>
+      </tr>`).join("");
+    $("#main").innerHTML += `
+      <div class="card">
+        <table>
+          <tr><th>品牌</th><th>提及</th><th>份额</th><th>平均位次</th><th>出现的问题数</th></tr>
+          ${rows}
+        </table>
+        <div class="dim" style="margin-top:10px">模型：${esc(d.model)}</div>
+      </div>
+      <div class="card">
+        <div class="dim" style="margin-bottom:8px">抽样的 ${d.prompts.length} 条提示词（生成规则保证里面绝不出现目标品牌名）</div>
+        <table>${d.prompts.map((p) => `<tr><td class="num">${esc(p.id)}</td><td>${pill(p.intent, "mute")}</td><td>${esc(p.text)}</td></tr>`).join("")}</table>
+      </div>`;
+  },
+
+  async filing() {
+    $("#main").innerHTML += `
+      <div class="card">
+        <div class="row">
+          <input id="q" type="text" value="营收多少" placeholder="问点什么，中英文都行">
+          <button class="btn" id="ask">问</button>
+        </div>
+        <div class="dim" style="margin-top:8px">
+          试：供应链主要依赖哪些地区 / 公司有多少员工 / CEO 的生日是哪天（最后一条应当拒答）
+        </div>
+      </div>
+      <div id="ans"></div>`;
+    $("#ask").onclick = () => askFiling();
+    $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") askFiling(); });
+    askFiling();
+  },
+
+  async audit() {
+    const d = await get("/api/audit");
+    const steps = d.steps.map((s) => `<tr>
+        <td><code>${esc(s.name)}</code></td><td>${esc(s.assertion)}</td>
+        <td>${s.status === "ok" ? pill("ok", "ok") : pill("error", "bad")}</td>
+        <td class="num">${s.rows}</td><td class="num">${s.findings}</td></tr>`).join("");
+    const ex = d.exceptions.map((e) => `<tr>
+        <td>${pill(e.severity, e.severity === "high" ? "bad" : "warn")}</td>
+        <td><code>${esc(e.ref)}</code></td><td>${esc(e.check)}</td>
+        <td>${esc(e.assertion)}</td><td class="quote">${esc(e.detail)}</td></tr>`).join("");
+    $("#main").innerHTML += `
+      <div class="kv">
+        <div><s>主体</s><b>${esc(d.entity)}</b></div>
+        <div><s>期末</s><b>${esc(d.period_end)}</b></div>
+        <div><s>结论</s><b>${d.status === "clean" ? "无例外" : esc(d.status)}</b></div>
+        <div><s>例外</s><b>${d.exceptions.length}</b></div>
+      </div>
+      <div class="card"><table><tr><th>程序</th><th>认定</th><th>状态</th><th>检查行数</th><th>例外</th></tr>${steps}</table></div>
+      <div class="card"><div class="dim" style="margin-bottom:6px">例外清单</div>
+        <table><tr><th>等级</th><th>凭证</th><th>程序</th><th>认定</th><th>说明</th></tr>${ex}</table></div>`;
+  },
+
+  async crux() {
+    const d = await get("/api/crux");
+    const cases = d.cases.map((c) => `<tr>
+        <td><code>${esc(c.id)}</code></td>
+        <td class="num">${c.score.toFixed(3)}</td>
+        <td>${c.passed ? pill("PASS", "ok") : pill("FAIL", "bad")}</td>
+        <td>${c.vetoed.length ? c.vetoed.map((v) => pill(v, "warn")).join(" ") : '<span class="dim">—</span>'}</td></tr>`).join("");
+    const cal = d.calibration, rg = d.regression;
+    $("#main").innerHTML += `
+      <div class="kv">
+        <div><s>通过率</s><b>${d.cases.filter((c) => c.passed).length}/${d.cases.length}</b></div>
+        <div><s>阈值</s><b>${d.threshold}</b></div>
+        <div><s>与人判一致率</s><b>${pct(cal.agreement)}</b></div>
+        <div><s>kappa</s><b>${cal.kappa.toFixed(3)}</b></div>
+      </div>
+      <div class="card"><table><tr><th>用例</th><th>得分</th><th>结论</th><th>硬否决</th></tr>${cases}</table>
+        <div class="dim" style="margin-top:10px">校准：${cal.ok ? pill("PASS", "ok") : pill("BLOCK", "bad")} ${esc(cal.diagnosis)}</div>
+      </div>
+      <div class="card">
+        <div class="dim" style="margin-bottom:6px">版本回归（新版修好 c2/c6，弄坏 c1）</div>
+        <div class="row"><span>通过率 ${pct(rg.before)} → ${pct(rg.after)}</span>
+          <span>${rg.verdict === "block" ? pill("BLOCK", "bad") : pill(rg.verdict, "warn")}</span>
+          <span class="dim">回归：${rg.regressions.map(esc).join(", ") || "无"}　修复：${rg.fixes.map(esc).join(", ") || "无"}</span></div>
+      </div>`;
+  },
+
+  async inbox() {
+    const d = await get("/api/inbox");
+    const kind = { blocked: ["已拦截", "bad"], sent: ["已发送", "ok"], approval: ["待审批", "warn"] };
+    const rows = d.messages.map((m) => `<tr>
+        <td>${pill(m.channel, "mute")} ${m.external ? pill("外部", "warn") : ""}</td>
+        <td class="num">${esc(m.sender)}</td>
+        <td class="quote">${esc(m.text)}</td>
+        <td>${pill(kind[m.outcome][0], kind[m.outcome][1])}${m.approval_id ? " <code>" + esc(m.approval_id) + "</code>" : ""}</td></tr>`).join("");
+    const ap = d.approvals.map((a) => `<tr><td><code>${esc(a.id)}</code></td><td>${pill(a.risk, "warn")}</td><td class="quote">${esc(a.text)}</td></tr>`).join("");
+    const audit = d.audit_tail.map((r) => `<tr><td class="num">${esc(JSON.stringify(r))}</td></tr>`).join("");
+    $("#main").innerHTML += `
+      <div class="card"><table><tr><th>渠道</th><th>发件人</th><th>内容</th><th>结果</th></tr>${rows}</table></div>
+      <div class="card"><div class="dim" style="margin-bottom:6px">审批队列（出口）</div>
+        <table><tr><th>编号</th><th>风险</th><th>拟发送内容</th></tr>${ap}</table></div>
+      <div class="card"><div class="dim" style="margin-bottom:6px">审计日志（尾部）</div>
+        <table>${audit}</table>
+        <div class="dim" style="margin-top:10px">上下文样例（预算 240 tokens）：<br><span class="quote">${esc(d.context_sample)}</span></div></div>`;
+  },
+
+  async store() {
+    const d = await get("/api/store");
+    const cat = d.catalog.map((m) => `<tr>
+        <td><code>${esc(m.agent)}</code></td><td class="num">${esc(m.version)}</td>
+        <td>${esc(m.pricing)} ${m.cents}¢</td>
+        <td class="num">${esc(m.digest)}</td>
+        <td>${m.permissions.map((p) => pill(p, "mute")).join(" ")}</td></tr>`).join("");
+    const ex = d.executions.map((e) => `<tr>
+        <td><code>${esc(e.agent)}</code></td><td class="num">${esc(e.request)}</td>
+        <td>${e.ok ? pill("OK", "ok") : pill(e.blocked ? "被拦" : "失败", "bad")}</td>
+        <td class="num">${e.amount_cents ? money(e.amount_cents) : "—"}</td>
+        <td class="dim">${e.duplicate ? "重投，未重复计费" : esc(e.reason || "")}</td></tr>`).join("");
+    const st = d.statement;
+    $("#main").innerHTML += `
+      <div class="card"><div class="dim" style="margin-bottom:6px">目录</div>
+        <table><tr><th>agent</th><th>版本</th><th>定价</th><th>digest</th><th>声明权限</th></tr>${cat}</table></div>
+      <div class="card"><div class="dim" style="margin-bottom:6px">调用（含一次缺权限被拦、一次重投）</div>
+        <table><tr><th>agent</th><th>请求</th><th>结果</th><th>计费</th><th>备注</th></tr>${ex}</table></div>
+      <div class="kv">
+        <div><s>应收</s><b>${money(st.gross_cents)}</b></div>
+        <div><s>平台分成 20%</s><b>${money(st.platform_cents)}</b></div>
+        <div><s>开发者</s><b>${money(st.developer_cents)}</b></div>
+      </div>`;
+  },
+};
+
+async function askFiling() {
+  const q = $("#q").value.trim();
+  if (q.length < 2) return;
+  $("#ans").innerHTML = '<div class="card empty">检索中…</div>';
+  try {
+    const r = await get("/api/filing?q=" + encodeURIComponent(q));
+    const st = r.status === "ok" ? pill("ok", "ok") : pill(r.status, "warn");
+    const cites = r.citations.length
+      ? r.citations.map((c, i) => `<div class="cite"><span class="ref">[${i + 1}] ${esc(c.ref)}</span>
+          <span class="dim">${esc(c.kind)}</span><div class="quote">${esc(c.quote)}</div></div>`).join("")
+      : '<div class="dim">没有引用——按契约，没有引用就没有答案。</div>';
+    $("#ans").innerHTML = `<div class="card">
+        <div>${st} ${esc(r.text)}</div>
+        <div class="dim" style="margin-top:8px">文件 ${esc(r.doc)} · 路径 ${esc(r.kind)} · 置信度 ${r.confidence}</div>
+        ${cites}</div>`;
+  } catch (e) {
+    $("#ans").innerHTML = `<div class="card empty">失败：${esc(e.message)}</div>`;
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

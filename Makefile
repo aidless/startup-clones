@@ -11,6 +11,9 @@ test:
 		( cd $$p && python3 -m pytest -q ) || exit 1; \
 	done
 
+console:
+	cd console && python3 app.py --port 8800
+
 serve:
 	cd filing-lens && python3 app/server.py
 
