@@ -41,9 +41,14 @@ def test_filing_refuses_without_citations(client):
 
 
 def test_filing_numeric_answer_carries_xbrl_citation(client):
-    d = client.get("/api/filing", params={"q": "营收多少"}).json()
-    assert d["status"] == "ok" and d["kind"] == "metric"
-    assert d["citations"][0]["kind"] == "xbrl"
+    """重复请求：SQLite 连接跨线程曾是间歇性 500（12 轮 pytest 炸 3 次）。
+
+    单次断言抓不到这类缺陷——必须同一进程内连打多次，否则测试自己会变成 flaky 装饰。
+    """
+    for _ in range(5):
+        d = client.get("/api/filing", params={"q": "营收多少"}).json()
+        assert d["status"] == "ok" and d["kind"] == "metric"
+        assert d["citations"][0]["kind"] == "xbrl"
 
 
 def test_audit_reports_exceptions_and_status(client):

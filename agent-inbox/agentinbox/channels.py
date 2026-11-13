@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from typing import Callable
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# "Bob <bob@x.com>" 与 "\"Alice <alice@acme.example>\" <attacker@evil.example>" 两种写法：
+# 前者要取尖括号里的地址；后者尖括号里塞了一个伪装成内部同事的显示名，
+# 真正的发件人是最后一个尖括号里的地址。只 search(EMAIL_RE) 会取到第一个像邮箱的子串，
+# 于是攻击者被当成内部同事，出口审批整条被绕过。
+ANGLE_RE = re.compile(r"<([^<>]+)>")
+INTERNAL_DOMAINS = ("@acme.example", "@acme.internal")
 
 
 @dataclass
@@ -26,7 +32,7 @@ class Inbound:
     @property
     def is_external(self) -> bool:
         """发件人是否来自组织外部（决定要不要审批）。"""
-        return not self.sender.endswith("@acme.internal")
+        return not self.sender.lower().endswith(INTERNAL_DOMAINS)
 
 
 def _now() -> str:
@@ -45,13 +51,27 @@ def parse_slack(payload: dict) -> Inbound:
     )
 
 
+def sender_address(frm: str) -> str:
+    """从 From 头里取真正的地址（addr-spec），不取显示名。
+
+    规则：取最后一个尖括号内的串；没有尖括号才退回正则搜第一个邮箱。
+    测试钉住两个方向：伪装写法必须解析到 attacker@evil.example；
+    正常写法 "Bob <bob@partner.example>" 必须仍是 bob@partner.example。
+    """
+    for inner in reversed(ANGLE_RE.findall(frm)):
+        m = EMAIL_RE.search(inner)
+        if m:
+            return m.group(0)
+    m = EMAIL_RE.search(frm)
+    return m.group(0) if m else frm.strip()
+
+
 def parse_email(payload: dict) -> Inbound:
     frm = payload.get("from", "")
-    m = EMAIL_RE.search(frm)
     return Inbound(
         channel="email",
         thread_id=payload.get("thread_id") or payload.get("message_id", ""),
-        sender=m.group(0) if m else frm,
+        sender=sender_address(frm),
         text=payload.get("body", payload.get("text", "")),
         ts=payload.get("date", _now()),
         raw=payload,

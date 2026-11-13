@@ -71,7 +71,11 @@ class Fact:
 
 
 def load_companyfacts(payload: dict, db_path: str | Path = ":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
+    # check_same_thread=False：连接在载入线程里建，查询发生在 FastAPI 的请求线程池里。
+    # 默认 True 时服务端会随机抛「SQLite objects created in a thread can only be used in
+    # that same thread」——console 的 filing 面板每 3 次请求炸 1 次（实测 12 轮 3 次）。
+    # 载入完成后本连接只做只读查询，因此允许跨线程使用是安全的。
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     cik = str(payload.get("cik", "")).zfill(10)

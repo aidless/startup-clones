@@ -60,5 +60,7 @@ class Router:
         delivered = True
         if out_decision.needs_approval:
             delivered = False
-            approval_id = out_decision.reason.split(" ")[1]
+            # 不要从人读文案里抠 id：原实现 reason.split(" ")[1] 拿到的是
+            # "AP-0001（money）"，拿去 decide() 直接 KeyError。
+            approval_id = out_decision.approval_id
         return Outbound(inbound.channel, inbound.thread_id, reply, delivered, approval_id)

@@ -14,7 +14,11 @@ from .channels import Inbound
 
 # 风险动作：命中即需人工审批（不是禁止，是「先问」）
 RISK_PATTERNS = [
-    (re.compile(r"(退款|付款|转账|打款|refund|wire|payment)", re.I), "money"),
+    # 资金类必须覆盖同义说法：只列「退款/付款/转账/打款」时，
+    # 「把这 1200 元汇给供应商」「转1200给客户」「还给客户 500 元」全部直接放行。
+    (re.compile(r"(退款|付款|转账|打款|汇款|汇给|汇出|转给|转\s*\d|还给|退回|退给|打钱|付给|"
+                r"打\s*(?:\d|[一二三四五六七八九十])|"
+                r"refund|wire|payment|remit|transfer|send\s+\d+|pay\s+\d+)", re.I), "money"),
     (re.compile(r"(删除|删掉|销户|drop\s+table|delete\s+all)", re.I), "destructive"),
     (re.compile(r"(密码|验证码|身份证|password|otp|ssn|id\s*card)", re.I), "secrets"),
     (re.compile(r"(合同|报价|commit|签约|invoice)", re.I), "commercial"),
@@ -27,6 +31,7 @@ class Decision:
     reason: str = ""
     needs_approval: bool = False
     risk: str = ""
+    approval_id: str = ""
 
     def __bool__(self) -> bool:  # 让 `if decision:` 读起来自然
         return self.allow
@@ -46,8 +51,21 @@ class Approval:
 class Policy:
     def __init__(self, allowlist: set[str] | None = None,
                  rate_limit: int = 6, window_seconds: int = 60,
-                 external_needs_approval: bool = True):
-        self.allowlist = allowlist or set()
+                 external_needs_approval: bool = True,
+                 open_mode: bool = False,
+                 global_rate_limit: int = 0):
+        """open_mode=True 表示「故意对所有发件人开放」，必须显式声明。
+
+        原先 allowlist 为空时 `if self.allowlist and ...` 直接短路放行——
+        忘记配白名单 = 对全世界开放，而配置错误在常驻服务里不会有人发现。
+        """
+        self.allowlist = set(allowlist or ())
+        self.open_mode = open_mode
+        # 全局兜底限流：只按 sender 计数时，伪造 100 个 From 就是 100 个独立桶。
+        # 全局桶默认是单发件人桶的 2 倍：正常多客户并发不受影响，
+        # 但伪造 From 刷量拿到的额度是有限且很小的（10 条测试里放行 ≤6）。
+        self.global_rate_limit = global_rate_limit or rate_limit * 2
+        self._global: deque = deque()
         self.rate_limit = rate_limit
         self.window = window_seconds
         self.external_needs_approval = external_needs_approval
@@ -58,12 +76,17 @@ class Policy:
 
     # ---- 入口 ----
     def check_inbound(self, inbound: Inbound) -> Decision:
-        if self.allowlist and inbound.sender not in self.allowlist:
+        if not self.open_mode and inbound.sender not in self.allowlist:
             self._log(inbound, "blocked", "sender 不在白名单")
-            return Decision(False, f"发件人 {inbound.sender} 不在白名单")
+            why = "白名单未配置，默认全部拒绝（如需开放请显式 open_mode=True）" \
+                if not self.allowlist else f"发件人 {inbound.sender} 不在白名单"
+            return Decision(False, why)
         if not inbound.text.strip():
             self._log(inbound, "blocked", "空消息")
             return Decision(False, "空消息")
+        if not self._take_global_token():
+            self._log(inbound, "throttled", "全局速率")
+            return Decision(False, f"超出全局 {self.global_rate_limit}/{self.window}s 速率限制")
         if not self._take_token(inbound.sender):
             self._log(inbound, "throttled", "超出速率")
             return Decision(False, f"发件人 {inbound.sender} 超出 {self.rate_limit}/{self.window}s 速率限制")
@@ -84,11 +107,15 @@ class Policy:
         aid = f"AP-{self._seq:04d}"
         self.approvals.append(Approval(aid, inbound.thread_id, text, risk, time.time()))
         self._log(inbound, "pending_approval", f"{aid} risk={risk}")
-        return Decision(True, f"已进入审批队列 {aid}（{risk}）", needs_approval=True, risk=risk)
+        return Decision(True, f"已进入审批队列 {aid}（{risk}）",
+                        needs_approval=True, risk=risk, approval_id=aid)
 
     def decide(self, approval_id: str, approved: bool, by: str = "operator") -> Approval:
         for a in self.approvals:
             if a.approval_id == approval_id:
+                # 终态不可改判：已批准的不能再被拒，已拒的不能再被批（否则审计日志会自相矛盾）
+                if a.status != "pending":
+                    raise ValueError(f"{approval_id} 已是终态 {a.status}，不能改判")
                 a.status = "approved" if approved else "rejected"
                 a.decided_by = by
                 self.audit.append({"event": "approval_decided", "id": approval_id,
@@ -100,6 +127,15 @@ class Policy:
         return [a for a in self.approvals if a.status == "pending"]
 
     # ---- 内部 ----
+    def _take_global_token(self) -> bool:
+        now = time.time()
+        while self._global and now - self._global[0] > self.window:
+            self._global.popleft()
+        if len(self._global) >= self.global_rate_limit:
+            return False
+        self._global.append(now)
+        return True
+
     def _take_token(self, sender: str) -> bool:
         now = time.time()
         q = self._hits[sender]
