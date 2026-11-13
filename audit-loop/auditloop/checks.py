@@ -111,6 +111,11 @@ def revenue_cutoff(invoices: list[Invoice], period_end: date, tolerance_days: in
         if not inv.recognized:
             continue
         if inv.shipped_date is None:
+            # 未发货分支同样必须先过「收入是否落在本期内」——原实现直接报，
+            # 下期收入（2027-01-15，期末 2026-09-30）被成本期截止例外，
+            # 而本期收入确认 + 无发货记录才是真例外。
+            if inv.revenue_date > period_end:
+                continue
             findings.append(Finding(
                 check="revenue_cutoff", assertion=CUTOFF, ref=inv.invoice_id, severity="high",
                 detail=f"{inv.customer} 已确认收入但无发货记录（期末 {period_end}）", amount=inv.amount))
