@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import sqlite3
 from pathlib import Path
 
 from . import answer as answer_mod
 from . import edgar, facts, index
+from .ingest import safe_component
 
 
 class Filing:
@@ -62,8 +64,14 @@ def discover(data_dir: str | Path) -> list[dict]:
 
 
 def load(data_dir: str | Path, tag: str) -> Filing:
+    """按 tag 取一份 10-K。
+
+    tag 必须先收成单段再做文件名匹配：原实现直接 `glob(f"{tag}_10k_*.htm")`，
+    `tag="*"` 会把别家公司的文件返回（`GET /api/meta?cik=*` 因此以 200 返回任意文件）。
+    """
     data_dir = Path(data_dir)
-    hits = sorted(data_dir.glob(f"{tag}_10k_*.htm"))
+    tag = safe_component(tag, "tag")
+    hits = sorted(data_dir.glob(glob.escape(tag) + "_10k_*.htm"))
     if not hits:
         raise FileNotFoundError(f"{data_dir} 下没有 {tag} 的 10-K")
     facts_path = data_dir / f"{tag}_facts.json"

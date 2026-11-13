@@ -21,13 +21,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, HTTPException, Query  # noqa: E402
+from fastapi import FastAPI, HTTPException, Query, Request  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
 from filinglens import corpus, ingest  # noqa: E402
 from filinglens.corpus import Filing  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("FILINGLENS_DATA", ROOT / "data"))
+# /api/ingest 会往磁盘写文件（可覆盖真实 10-K）。演示服务默认只读，
+# 写入必须显式配 token；没配 = 关死，而不是「谁都能写」。
+INGEST_TOKEN = os.environ.get("FILINGLENS_INGEST_TOKEN", "")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="filing-lens", docs_url="/api/docs")
@@ -55,6 +58,9 @@ def load(cik: str) -> Filing:
         filing = corpus.load(DATA_DIR, cik)
     except FileNotFoundError as exc:
         raise HTTPException(404, f"{exc}；先跑 scripts/fetch_edgar.py 或 POST /api/ingest") from exc
+    except ingest.IngestError as exc:
+        # 非法 tag（含 glob 元字符、路径分隔符）是调用方输入错误，不是服务端故障
+        raise HTTPException(400, str(exc)) from exc
     _CACHE[cik] = filing
     return filing
 
@@ -70,12 +76,17 @@ def filings() -> JSONResponse:
 
 
 @app.post("/api/ingest")
-def ingest_one(body: dict) -> JSONResponse:
+def ingest_one(body: dict, request: Request) -> JSONResponse:
     """把任意 CIK 或任意 10-K URL 弄进 data/，然后立刻可问。
 
     这是"支持任意公司"的唯一入口——页面上的下拉框只列 data/ 里已有的文件，
     真正的扩展靠这里。
     """
+    if not INGEST_TOKEN:
+        raise HTTPException(403, "写入接口未启用：启动时设置 FILINGLENS_INGEST_TOKEN 才允许 POST /api/ingest")
+    if request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        raise HTTPException(403, "X-Ingest-Token 缺失或不正确")
+
     cik, url = (body or {}).get("cik"), (body or {}).get("url")
     if not cik and not url:
         raise HTTPException(400, "要么给 cik，要么给 url")
