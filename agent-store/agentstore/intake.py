@@ -129,6 +129,33 @@ class Finding:
     detail: str
 
 
+# 这两类权限「存在任何环境变量名」本身就是硬证据：要拿凭据 = 要读密钥
+_ENV_ITSELF_IS_PROOF = {"secrets.read"}
+
+
+def _env_proves(perm: str, evidence: list[str], hard: set[str]) -> bool:
+    """判断环境变量名是否构成这条权限的硬证据。
+
+    原实现 `any(env in e ...)` 方向反了：拿整个环境变量名去问「是否被证据词包含」，
+    而证据词是 stripe/payment 这类短词 —— `"STRIPE_SECRET_KEY" in "stripe"` 恒假。
+    于是只剩「环境变量名自己出现在证据列表里」这一种自证，结果任何 KEY 名都能把
+    *每一条* 敏感权限顶成 high（ANTHROPIC_API_KEY 也被当成动钱证据）。
+
+    正确判据：证据词出现在环境变量名里（stripe ⊂ STRIPE_SECRET_KEY）。
+    """
+    if not hard:
+        return False
+    if perm in _ENV_ITSELF_IS_PROOF:
+        return True
+    for e in evidence:
+        token = e.lower().strip()
+        if not token:
+            continue
+        if any(token in env.lower() for env in hard):
+            return True
+    return False
+
+
 def audit(facts: ServerFacts) -> list[Finding]:
     """把「需要的」和「声明的」对起来，产出可读的入市结论。"""
     need = infer_permissions(facts)
@@ -148,7 +175,7 @@ def audit(facts: ServerFacts) -> list[Finding]:
         if perm in ("secrets.read", "payment.charge", "email.send"):
             # 证据强度分级：README 里出现具体 KEY 名 = 硬证据；
             # 只有「token/secret」这类词 = 软证据，可能是讲别人的东西。
-            proven = any(any(env in e for env in hard) for e in need[perm]) if hard else False
+            proven = _env_proves(perm, need[perm], hard)
             out.append(Finding(
                 "undeclared_sensitive_permission", "high" if proven else "medium",
                 f"需要 {perm}（依据：{need[perm][:4]}）却未声明"

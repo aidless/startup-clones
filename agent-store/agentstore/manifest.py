@@ -35,8 +35,11 @@ class Pricing:
     def validate(self) -> None:
         if self.kind not in {"per_call", "per_token", "subscription"}:
             raise ManifestError(f"未知计费方式: {self.kind}")
-        if self.kind != "subscription" and self.cents_per_unit <= 0:
-            raise ManifestError("按量计费必须给出正价格（美分）")
+        if self.cents_per_unit <= 0:
+            # 订阅也必须为正：负价等于平台倒贴（可被刷成负数账单），
+            # 0 价则「走计费通道但不收钱」，两种都该在入市时拒掉。
+            raise ManifestError("价格必须为正（美分）"
+                                + ("，按量计费" if self.kind != "subscription" else "，订阅同样如此"))
         if self.kind == "subscription" and self.period not in {"month", "year"}:
             raise ManifestError("订阅周期只能是 month/year")
 

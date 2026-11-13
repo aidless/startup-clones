@@ -18,6 +18,7 @@ class Execution:
     output: str = ""
     error: str = ""
     charged_cents: int = 0
+    duplicate: bool = False      # 同一 (buyer, request_id) 的重放：不再执行、不再计费
     audit: list[dict] = field(default_factory=list)
 
     def render(self) -> str:
@@ -37,6 +38,9 @@ class Runtime:
     def __init__(self, registry: Registry, ledger=None):
         self.registry = registry
         self.ledger = ledger
+        # 已执行的请求结果：重投直接回放，不重跑 handler。
+        # 只靠 ledger 去重是不够的 —— 那拦的是计费，handler 已经又跑了一遍。
+        self._done: dict[tuple[str, str], Execution] = {}
 
     def execute(self, buyer: str, agent_id: str,
                 handler: Callable[[str], tuple[str, int]],
@@ -48,6 +52,14 @@ class Runtime:
             return Execution(request_id, agent_id, "-", buyer, False, error=f"未安装: {exc}")
 
         # 先验安装凭据，再验权限，最后才执行 —— 顺序不能换，否则会先消耗模型调用
+        seen = self._done.get((buyer, request_id))
+        if seen is not None:
+            replay = Execution(request_id, agent_id, seen.version, buyer, seen.ok,
+                               output=seen.output, error=seen.error,
+                               charged_cents=seen.charged_cents, duplicate=True)
+            _audit(replay, "gate", result="duplicate")
+            return replay
+
         ex = Execution(request_id, agent_id, v.version, buyer, False)
         _audit(ex, "resolve", version=v.version, status=v.status)
 
@@ -74,9 +86,20 @@ class Runtime:
         ex.ok, ex.output = True, output
         _audit(ex, "execute", result="ok", units=units)
 
+        self._done[(buyer, request_id)] = ex
+
         if self.ledger is not None:
-            record = self.ledger.record(buyer, agent_id, v.version, ex.request_id,
-                                        units=units if v.manifest.pricing.kind != "per_token" else max(units, tokens))
+            try:
+                record = self.ledger.record(
+                    buyer, agent_id, v.version, ex.request_id,
+                    units=units if v.manifest.pricing.kind != "per_token" else max(units, tokens))
+            except KeyError as exc:
+                # 计量器不认识这个清单（没 register）→ 原实现让 KeyError 穿透到调用方，
+                # 此时 handler 已经跑完、模型调用已经花掉，调用方却拿到裸 KeyError。
+                # 结果保留、不收费、把原因写进 error 让人能修。
+                ex.error = f"meter_unregistered: {exc}"
+                _audit(ex, "meter", result="unregistered")
+                return ex
             ex.charged_cents = record.cents
             _audit(ex, "meter", cents=record.cents, dedup=record.duplicate)
         return ex

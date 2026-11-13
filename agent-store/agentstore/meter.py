@@ -26,7 +26,10 @@ CNY = Decimal("0.01")
 
 
 def _money(cents: int) -> str:
-    return f"${cents / 100:,.2f}"
+    # 不用 cents / 100：float 在 2**53 美分（约 90 万亿元）以上丢精度，
+    # 账单金额与流水对不上。整数除 Decimal，全程精确。
+    amount = Decimal(int(cents)) / Decimal(100)
+    return f"${amount:,.2f}"
 
 
 @dataclass
