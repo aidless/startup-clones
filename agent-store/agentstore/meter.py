@@ -10,13 +10,15 @@ from .manifest import AgentManifest
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage (
-    request_id TEXT PRIMARY KEY,     -- 幂等键：渠道重投/客户端重试都撞这里
+    -- 幂等键是 (buyer, request_id)：只按 request_id 时，B 撞上 A 的单号就永久免单
+    request_id TEXT NOT NULL,
     buyer      TEXT NOT NULL,
     agent_id   TEXT NOT NULL,
     version    TEXT NOT NULL,
     units      INTEGER NOT NULL,
     cents      INTEGER NOT NULL,
-    ts         TEXT NOT NULL
+    ts         TEXT NOT NULL,
+    PRIMARY KEY (buyer, request_id)
 );
 """
 
@@ -95,13 +97,18 @@ class Ledger:
         return p.cents_per_unit          # subscription：按周期一次性
 
     def record(self, buyer: str, agent_id: str, version: str,
-               request_id: str, units: int) -> UsageRecord:
-        row = self.conn.execute("SELECT cents FROM usage WHERE request_id=?", (request_id,)).fetchone()
+               request_id: str, units: int, cents: int | None = None) -> UsageRecord:
+        """记一次调用。cents 仅用于测试按分计价的边界（默认按清单算价）。"""
+        row = self.conn.execute(
+            "SELECT cents FROM usage WHERE buyer=? AND request_id=?",
+            (buyer, request_id)).fetchone()
         if row:
             return UsageRecord(request_id, buyer, agent_id, version, units, row[0], duplicate=True)
-        cents = self.price(agent_id, version, units)
+        if cents is None:
+            cents = self.price(agent_id, version, units)
         self.conn.execute(
-            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts) "
+            "VALUES(?,?,?,?,?,?,?)",
             (request_id, buyer, agent_id, version, units, cents, self._now))
         self.conn.commit()
         return UsageRecord(request_id, buyer, agent_id, version, units, cents)
@@ -113,9 +120,19 @@ class Ledger:
             "GROUP BY agent_id ORDER BY agent_id", (buyer,)).fetchall()
         st = Statement(buyer=buyer)
         total_fee = 0
-        for agent_id, calls, units, gross in rows:
-            # 分成按「行级四舍五入、余数留给开发者」——平台不靠舍入多拿钱
-            platform = int(Decimal(gross * fee_pct / 100).quantize(CNY, rounding=ROUND_HALF_UP))
+        # 分成必须按「先汇总再取整」：行级取整时 100 行 ×1¢ @20% 每行都是 0.2¢→0，
+        # 平台实收 0 分（实测复现）。汇总后按累计额分配，余数最后一行兜底，
+        # 保证 sum(platform) + sum(developer) == gross。
+        total_gross = sum(r[3] for r in rows)
+        target_fee = int(Decimal(total_gross * fee_pct / 100).quantize(CNY, rounding=ROUND_HALF_UP))
+        remaining = target_fee
+        for idx, (agent_id, calls, units, gross) in enumerate(rows):
+            if idx == len(rows) - 1:
+                platform = remaining          # 末行兜底，保证总分成精确
+            else:
+                platform = int(Decimal(gross * fee_pct / 100).quantize(CNY, rounding=ROUND_HALF_UP))
+                platform = min(platform, remaining)
+            remaining -= platform
             total_fee += platform
             st.lines.append(Line(agent_id, developers.get(agent_id, "unknown"), calls, units,
                                  gross, platform, gross - platform))
