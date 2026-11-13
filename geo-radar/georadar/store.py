@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +39,9 @@ CREATE TABLE IF NOT EXISTS mentions (
     position INTEGER NOT NULL,
     char_offset INTEGER NOT NULL,
     sentiment REAL NOT NULL,
-    context TEXT NOT NULL
+    context TEXT NOT NULL,
+    -- 同一 run 重存（导出脚本重跑 / 断点续跑）不能把 mention 翻倍：2 条变 4 条
+    PRIMARY KEY (run_id, prompt_id, brand)
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_run ON mentions(run_id);
 """
@@ -65,7 +68,8 @@ def save_run(conn: sqlite3.Connection, run: Run, mentions: list[Mention]) -> Non
         )
     for m in mentions:
         conn.execute(
-            "INSERT INTO mentions(run_id,prompt_id,brand,position,char_offset,sentiment,context) VALUES (?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO mentions(run_id,prompt_id,brand,position,char_offset,sentiment,context) "
+            "VALUES (?,?,?,?,?,?,?)",
             (run.run_id, m.prompt_id, m.brand, m.position, m.char_offset, m.sentiment, m.context),
         )
     conn.commit()
@@ -91,4 +95,10 @@ def load_run(conn: sqlite3.Connection, run_id: str) -> tuple[Run, list[Mention]]
 
 
 def new_run_id(prefix: str = "run") -> str:
-    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+    """秒级时间戳 + 微秒 + 4 位随机后缀。
+
+    只到秒时同秒两次调用得到同一个 run_id（实测 `run-20261113T045212` ×2），
+    而 run_id 是主键：后一次会把前一次的 runs 行覆盖掉，历史静默丢失。
+    """
+    now = datetime.now(timezone.utc)
+    return f"{prefix}-{now.strftime('%Y%m%dT%H%M%S')}{now.microsecond:06d}-{secrets.token_hex(2)}"

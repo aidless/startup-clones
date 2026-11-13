@@ -67,10 +67,19 @@ def markdown_report(
     if gap.get("gap_sov") is None:
         lines.append("没有可比的竞品数据，先补竞品清单。")
     else:
-        lines.append(
-            f"落后 **{gap['leader']}** 声量 **{_pct(gap['gap_sov'])}**、"
-            f"出现率少 **{gap['gap_visibility']}** 条提示词、平均位次差 **{gap['gap_position']}** 位。"
-        )
+        # gap_sov 是「竞品 − 我们」：为负说明我们领先，不能照抄成「落后 -53.8%」
+        if gap["gap_sov"] < 0:
+            lines.append(
+                f"领先 **{gap['leader']}** 声量 **{_pct(-gap['gap_sov'])}**、"
+                f"出现率多 **{-gap['gap_visibility']}** 条提示词、"
+                f"平均位次领先 **{-gap['gap_position']}** 位。"
+            )
+        else:
+            lines.append(
+                f"落后 **{gap['leader']}** 声量 **{_pct(gap['gap_sov'])}**、"
+                f"出现率少 **{gap['gap_visibility']}** 条提示词、"
+                f"平均位次差 **{gap['gap_position']}** 位。"
+            )
 
     lines += ["", "## 3. 位次分布（我们）", ""]
     dist = rank_distribution(mentions, brand)

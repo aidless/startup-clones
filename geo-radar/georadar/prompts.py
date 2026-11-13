@@ -60,6 +60,9 @@ def generate(
             seen.add(text.lower())
             out.append(Prompt(id=_pid(intent, text), text=text, intent=intent))
 
+    # 负数 limit 在切片语义里是「去掉末尾 N 条」，会静默少发一条而不是报错
+    if limit is not None and limit < 0:
+        raise ValueError(f"limit 必须 >= 0，收到 {limit}")
     # 先截断再排序：limit 应该保留模板宽度（覆盖不同意图），而不是被字母序砍成单一意图
     if limit:
         out = out[:limit]
