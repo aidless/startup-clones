@@ -98,7 +98,9 @@ def coverage(query: str, hit: Hit, idf=None, groups: list[list[str]] | None = No
     """
     appear_all = set(hit.matched) | set(tokenize(hit.chunk.text))
     if groups:
-        # 概念级覆盖：一个概念算命中，要求它那组英文词里至少一半出现在段落中。
+        # 概念级覆盖：一个概念算命中，只要那组英文词里**有一个**出现在段落中。
+        # 早先要求"过半"——实测把 9/20 家公司的"员工数"提问判成证据不足：
+        # 员工那组有五个词，正文里通常只写 employees 一个。
         covered = total = 0
         for g in groups:
             # 词表里的词可能带连字符（full-time），而分词器按 [a-z0-9]+ 切，
@@ -107,7 +109,7 @@ def coverage(query: str, hit: Hit, idf=None, groups: list[list[str]] | None = No
             if not terms:
                 continue
             total += 1
-            if len([t for t in terms if t in appear_all]) / len(terms) >= 0.5:
+            if any(t in appear_all for t in terms):
                 covered += 1
         if total:
             return covered / total

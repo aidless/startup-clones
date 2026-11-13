@@ -27,6 +27,9 @@
   input { flex: 1; min-width: 240px; }
   button { cursor: pointer; background: var(--accent); color: #0b0d11; border-color: transparent; font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
+  .ingest-row { display: flex; gap: 8px; margin: 4px 0 2px; }
+  .ingest-row input { flex: 1; background: #12161f; border: 1px solid #232a38; color: #dfe4ee;
+                      border-radius: 8px; padding: 8px 11px; font: inherit; font-size: 13px; }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 20px; }
   .chip {
     font-size: 12.5px; color: var(--dim); background: var(--panel);
@@ -62,6 +65,10 @@
     <select id="filing"></select>
     <input id="q" placeholder="例如：营收多少？ / 供应链主要集中在哪些地区？" autocomplete="off">
     <button id="go">问</button>
+  </div>
+  <div class="ingest-row">
+    <input id="src" placeholder="加载任意公司：CIK（如 320193）或 10-K 的 https 链接" autocomplete="off">
+    <button id="load" class="ghost">加载</button>
   </div>
   <div class="chips" id="chips"></div>
   <div id="out"><div class="card empty">选一份文件，然后提问。</div></div>
@@ -100,6 +107,25 @@ async function boot() {
   sel.onchange = () => { current = sel.value; showMeta(); };
   renderChips();
   showMeta();
+}
+
+async function ingest() {
+  const raw = $("src").value.trim();
+  if (!raw) return;
+  const body = /^https:\/\//i.test(raw) ? { url: raw } : { cik: raw };
+  $("out").innerHTML = '<div class="card empty">下载并解析中（SEC 限速，几秒钟）…</div>';
+  const r = await fetch("/api/ingest", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    $("out").innerHTML = `<div class="card empty">加载失败：${esc(d.detail || r.status)}</div>`;
+    return;
+  }
+  await boot();
+  $("out").innerHTML = `<div class="card"><b>已加载</b> ${esc(d.meta.doc)} ·
+    ${d.meta.sections} 个章节 · ${d.meta.chunks} 段 · XBRL ${d.meta.has_xbrl ? "有" : "无"}</div>`;
+  ask();
 }
 
 function renderChips() {
@@ -145,6 +171,8 @@ function card(r) {
     </div>`;
 }
 
+$("load").onclick = ingest;
+$("src").addEventListener("keydown", (e) => { if (e.key === "Enter") ingest(); });
 $("go").onclick = ask;
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
 boot();

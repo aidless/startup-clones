@@ -4,6 +4,51 @@
 
 > 对标：Finpilot（西雅图，2026-11-04 $10M Series A，Lobby Capital + Madrona）。它做投研问答，我们做同一件事的最小可验证内核，并且把「不许幻觉」写成代码契约而不是提示词。
 
+
+## 20 家真实公司的基准（`bench/report.md`）
+
+```bash
+python3 scripts/batch_bench.py            # 缺的文件自动下载，约 3–5 分钟
+python3 scripts/batch_bench.py --no-fetch # 只用 data/ 里已有的
+```
+
+| 题类 | 结果 | 判法 |
+|---|---|---|
+| XBRL 数字题（营收 / 净利 / 研发） | **55/55 正确** | 真值取 XBRL 年度序列最后一年，答案金额与之比相对误差 ≤0.5% |
+| 风险因素（文本题） | **20/20 有答案且带段落级出处** | 只验格式，内容对错机器判不了 |
+| 员工数 | **18/20 给出人数**，2 家明确拒答 | 必须给出「N 名员工」的陈述，且双年度并列时要取本期那个数 |
+| 该拒答的（CEO 生日 / 门店数） | **40/40 拒答** | 必须 `insufficient_evidence` 且引用为空 |
+
+XBRL 里没披露的项目（Amazon/Adobe/Coca-Cola/Walmart/JPM 没有 R&D 标签）记为 n/a，
+**从分母里剔除**——不能把「公司没披露」算成「系统答错」，那是最常见的自我贴金。
+
+### 这份基准自己在 20 家公司上先失败了四次
+
+不是「设计好然后跑通」，是**跑出来才发现设计是错的**：
+
+1. **Microsoft 的正文丢掉 88%**：它的 10-K 每页页眉都印着 `Item 1`，正文被切成 4k 的碎段，
+   旧实现「同 Item 只留最长那份」→ 393k 字符只剩 45k。改成「够长的同 Item 片段全部合并」。
+2. **Intel 的正文一段都没有**：它的 `Item N` 只出现在文末索引页（23 处全挤在最后 2k 字符），
+   按 Item 切出来不到全文的 1%。加了回退：**结构化抽取保留不足 15% 时整篇当一段文本**。
+3. **9/20 家的「有多少员工」被判证据不足**：员工那组有五个英文词，正文通常只写 `employees`
+   一个，而概念覆盖率要求「组内过半命中」——改成「命中一个就够」。
+4. **同一句里两个年份取错**：Coca-Cola 写 `65,900 and 69,700 employees, respectively`，
+   贴着 `employees` 的是**旧**数字。加了 `respectively` 的特判，取第一个。
+5. **员工数根本没进 top-3**：它常写在第 40 篇里一句话，BM25 按查询词排不进来。改成专门一条路：
+   全文扫「N 名员工」的陈述，找到就用它答，找不到就拒答（Qualcomm、Intel 就一直拒答——
+   因为它们的 10-K 里真的没有这句）。
+
+## 任意公司 / 任意 URL
+
+```bash
+curl -X POST localhost:8765/api/ingest -H 'Content-Type: application/json' -d '{"cik":"320193"}'
+curl -X POST localhost:8765/api/ingest -H 'Content-Type: application/json' \
+     -d '{"url":"https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/aapl-20260926.htm"}'
+```
+
+只接受 https + SEC 域名，单文件 40MB 上限（边读边数，超了立刻停）。
+落盘名由 tag 决定，`{tag}_10k_{period}.htm` 与 `{tag}_facts.json` 必须同 tag，否则服务找不到。
+
 ## 这个项目真正的难点不是 LLM
 
 投研问答的失败模式，90% 不是「模型不够聪明」，而是这三件：

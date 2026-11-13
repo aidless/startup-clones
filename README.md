@@ -87,3 +87,11 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 一个 FastAPI 进程、六个面板：GEO 份额表、10-K 问答、审计例外清单、agent 评测与校准、
 消息准入与审批、agent 商店账单。每个面板调的都是库里已经在跑的那条链路，
 没有为演示另写一套逻辑。
+
+## 一句话状态（2026-11-12）
+
+- 测试：**126 passed**（geo 13 / filing 40 / audit 15 / crux 22 / inbox 15 / store 21）
+- 真实数据：`filing-lens` 20 家公司 10-K（数字题 55/55、员工数 18/20、该拒答 40/40）、
+  `audit-loop` Apple 8 年 + Microsoft 9 年、`cruxline` 60 条真实 agent 轨迹、
+  `agent-inbox` Apple FY2023 CORRESP 函件、`agent-store` 16 个真实 MCP server、
+  `geo-radar` 三赛道 × 三强模型对照组

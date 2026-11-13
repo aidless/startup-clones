@@ -82,6 +82,30 @@ def has_quantity(sentence: str) -> bool:
 
 QUANTITY_RE = re.compile(r"多少|几个|几位|几名|多少人|how many|number of|how much", re.I)
 
+# 「有多少员工」这类问题，合格的证据只有一种句子形态：数字 + 员工。
+# 用「句子里有数字且有 employees」会放过「80% 员工是技术人员」这种百分比陈述，
+# 也会放过「share-based awards to employees 2,073」这种表格残渣——都在真实 10-K 上遇到过。
+# 人数陈述的形态比想象的多：\"1.5 million employees\"（Amazon）、
+# \"2.1 million associates\"（Walmart 不说 employees）、\"42,000 employees\"。
+# 只认三位以上整数会漏掉前两种，实测 20 家里漏 4 家。
+HEADCOUNT_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?(?:\s*(?:million|thousand))?)\s+"
+    r"(?:(?:full[- ]time|part[- ]time)\s+)*(?:and\s+part[- ]time\s+)?(?:equivalent\s+)?"
+    r"(?:employees|people|associates|team members|personnel)", re.I)
+
+# \"65,900 and 69,700 employees, respectively\" —— 紧挨着 employees 的是**旧**数字。
+RESPECTIVELY_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s+and\s+(\d[\d,]*(?:\.\d+)?)\s+(?:[a-z\-\s]{0,24})?employees", re.I)
+
+
+def headcount_number(sentence: str) -> str | None:
+    """从句子里取人数。双年度并列时取第一个（那是本期）。"""
+    pair = RESPECTIVELY_RE.search(sentence)
+    if pair:
+        return pair.group(1)
+    m = HEADCOUNT_RE.search(sentence)
+    return m.group(0) if m else None
+
 
 def _sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?。！？])\s+", text)
@@ -119,6 +143,48 @@ class Answerer:
         return Response(kind="metric", status="ok", text=text, citations=cites,
                         confidence=1.0 if len(series) >= 2 else 0.7)
 
+    # ---- 员工数：结构化的问法配结构化的找法 ----
+
+    def _headcount_answer(self, question: str) -> Response | None:
+        """「有多少员工」不走 BM25 的普通召回，直接在全文里找"N 名员工"的陈述。
+
+        为什么单独一条路：普通召回取 top-3 段，而 10-K 里员工数常写在第 40 篇里
+        一句话（"As of June 30, 2026, we employed approximately 223,000 people"），
+        BM25 按查询词打分根本排不进来。实测 20 家里有 7 家的员工数就这样被漏掉，
+        然后被"证据不足"拒答——拒答是诚实的，但这里本来有证据。
+        """
+        if not QUANTITY_RE.search(question):
+            return None
+        groups = glossary.expand_groups(question)
+        if not any("employees" in g for g in groups):
+            return None
+        pool = self.index.search("employees people workforce headcount employed", k=60)
+        best = None
+        for h in pool:
+            for sent in _sentences(h.chunk.text):
+                m = HEADCOUNT_RE.search(sent)
+                if not m:
+                    continue
+                head = sent[:m.start()].lower()
+                # 优先"我们有多少人"的陈述，其次只是顺带提到人数的句子
+                strong = any(k in head for k in ("we employed", "we had", "had approximately",
+                                                 "employed approximately", "had ", "headcount",
+                                                 "workforce of"))
+                if best is None or (strong and not best[0]):
+                    best = (strong, sent, h.chunk.ref)
+                if strong:
+                    break
+            if best and best[0]:
+                break
+        if best is None:
+            return Response(kind="excerpt", status="insufficient_evidence",
+                            text=REFUSAL + "（全文没有「N 名员工」这类陈述，无法给出人数）",
+                            citations=[])
+        _, sent, ref = best
+        return Response(kind="excerpt", status="ok", text=sent,
+                        citations=[Citation(ref=ref, quote=sent, kind="text")],
+                        confidence=0.8)
+
     # ---- 文本通道 ----
     def _excerpt_answer(self, question: str, k: int = 5) -> Response:
         # 跨语言召回：中文问句先扩成英文关键词，否则 BM25 零命中（真实 10-K 上必然发生）
@@ -137,12 +203,12 @@ class Answerer:
             cov_concept = coverage(question, h, groups=groups) if groups else 0.0
             scored.append((max(cov_words, cov_concept), cov_words, cov_concept, rank, h))
         cov, cov_words, cov_concept, _, best = max(scored, key=lambda x: (x[0], -x[3]))
-        if CJK_RE.search(question) and cov_concept == 0.0:
-            # 中文提问只能靠词表桥接。词表里一个概念都没被命中时，剩下的匹配都是
-            # 顺带撞上的英文词（「CEO 的生日」只撞到 ceo），必须拒答——
-            # 否则分母缩小到一个词，任何含 CEO 的段落都能拿到 100% 覆盖率。
+        if CJK_RE.search(question) and not groups:
+            # 判据是「这句话里的中文，一个词表概念都没命中」，不是「覆盖率算出来是 0」。
+            # 后者分母一变结论就翻：只撞上一个 ceo 也能拿 100% 覆盖（放过假答案），
+            # 而员工那组五个词只出现一个就判 0（杀掉真答案，20 家里误杀 9 家）。
             return Response(kind="excerpt", status="insufficient_evidence",
-                            text=REFUSAL + "（问题里的中文概念不在词表内，无法桥接到英文原文）",
+                            text=REFUSAL + "（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）",
                             citations=[])
         if cov < MIN_COVERAGE:
             return Response(kind="excerpt", status="insufficient_evidence",
@@ -151,6 +217,8 @@ class Answerer:
 
         q = set(tokenize(q_expanded))
         wants_number = bool(QUANTITY_RE.search(question))
+        # 问员工数就必须给出"N 个员工"，不能拿一段提到 employees 的闲话充数
+        wants_headcount = wants_number and any("employees" in g for g in groups)
 
         # 「多少/几个」类问题要看多段：正确答案常在别的段落（问员工数，命中段讲的是
         # 研发费用里的 headcount 成本）。所以按句子打分，跨 top-3 段落挑带数字的句子。
@@ -163,9 +231,16 @@ class Answerer:
                     continue
                 if wants_number and not has_quantity(sent):
                     continue     # 问「多少」时，没有量的句子直接不参选
+                if wants_headcount and not headcount_number(sent):
+                    continue     # 员工数只认「N 个员工」的写法
                 bonus = 2.0 if wants_number else 0.0
                 scored.append((overlap + bonus - 0.1 * rank, rank, i, sent, h.chunk.ref))
         if not scored:
+            if wants_headcount:
+                # 宁可不答，也不要拿"员工里有 80% 是技术岗"当员工人数。
+                return Response(kind="excerpt", status="insufficient_evidence",
+                                text=REFUSAL + "（全文没有「N 名员工」这类陈述，无法给出人数）",
+                                citations=[])
             quote, ref = best.chunk.text[:400], best.chunk.ref
         else:
             scored.sort(key=lambda x: (-x[0], x[1], x[2]))
@@ -181,6 +256,9 @@ class Answerer:
         )
 
     def ask(self, question: str) -> Response:
+        hc = self._headcount_answer(question)
+        if hc is not None:
+            return hc
         metric = self._metric_answer(question)
         if metric and metric.status == "ok":
             return metric

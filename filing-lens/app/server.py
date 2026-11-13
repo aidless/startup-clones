@@ -14,9 +14,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -26,46 +24,13 @@ sys.path.insert(0, str(ROOT))
 from fastapi import FastAPI, HTTPException, Query  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
-from filinglens import answer as answer_mod  # noqa: E402
-from filinglens import edgar, facts, index  # noqa: E402
+from filinglens import corpus, ingest  # noqa: E402
+from filinglens.corpus import Filing  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("FILINGLENS_DATA", ROOT / "data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="filing-lens", docs_url="/api/docs")
-
-
-class Filing:
-    """一份已解析的 10-K：文本块 + XBRL 连接 + 检索索引都在这里。"""
-
-    def __init__(self, cik: str, html_path: Path, facts_path: Path | None):
-        self.cik = cik
-        self.doc = html_path.stem
-        html = html_path.read_text(errors="ignore")
-        _, self.chunks, self.tables = edgar.parse(html, doc=self.doc)
-        self.index = index.BM25Index().add(self.chunks)
-        self.conn: sqlite3.Connection | None = None
-        if facts_path and facts_path.exists():
-            payload = json.loads(facts_path.read_text())
-            self.conn = facts.load_companyfacts(payload)
-        self.answerer = answer_mod.Answerer(self.chunks, self.conn)
-
-    @property
-    def periods(self) -> str:
-        # 文件名形如 0000320193_10k_2026-09-26.htm，期间就是从文件名里来的
-        parts = self.doc.split("_")
-        return parts[-1] if len(parts) >= 3 else "unknown"
-
-    def meta(self) -> dict:
-        return {
-            "cik": self.cik,
-            "doc": self.doc,
-            "period": self.periods,
-            "sections": len({c.item for c in self.chunks}),
-            "chunks": len(self.chunks),
-            "tables": len(self.tables),
-            "has_xbrl": self.conn is not None,
-        }
 
 
 _CACHE: dict[str, Filing] = {}
@@ -80,23 +45,16 @@ def configure(data_dir: str | Path) -> None:
 
 def scan() -> list[dict]:
     """列出 data/ 下所有可用的 10-K 文件。"""
-    out = []
-    for p in sorted(DATA_DIR.glob("*_10k_*.htm")):
-        cik = p.name.split("_")[0]
-        facts_path = DATA_DIR / f"{cik}_facts.json"
-        out.append({"cik": cik, "period": p.name.split("_")[-1].replace(".htm", ""),
-                    "has_xbrl": facts_path.exists()})
-    return out
+    return corpus.discover(DATA_DIR)
 
 
 def load(cik: str) -> Filing:
     if cik in _CACHE:
         return _CACHE[cik]
-    hits = sorted(DATA_DIR.glob(f"{cik}_10k_*.htm"))
-    if not hits:
-        raise HTTPException(404, f"data/ 下没有 CIK {cik} 的 10-K，先跑 scripts/fetch_edgar.py")
-    facts_path = DATA_DIR / f"{cik}_facts.json"
-    filing = Filing(cik, hits[-1], facts_path if facts_path.exists() else None)
+    try:
+        filing = corpus.load(DATA_DIR, cik)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"{exc}；先跑 scripts/fetch_edgar.py 或 POST /api/ingest") from exc
     _CACHE[cik] = filing
     return filing
 
@@ -109,6 +67,30 @@ def page() -> str:
 @app.get("/api/filings")
 def filings() -> JSONResponse:
     return JSONResponse({"data_dir": str(DATA_DIR), "filings": scan()})
+
+
+@app.post("/api/ingest")
+def ingest_one(body: dict) -> JSONResponse:
+    """把任意 CIK 或任意 10-K URL 弄进 data/，然后立刻可问。
+
+    这是"支持任意公司"的唯一入口——页面上的下拉框只列 data/ 里已有的文件，
+    真正的扩展靠这里。
+    """
+    cik, url = (body or {}).get("cik"), (body or {}).get("url")
+    if not cik and not url:
+        raise HTTPException(400, "要么给 cik，要么给 url")
+    try:
+        if url:
+            out = ingest.from_url(url, DATA_DIR, facts_url=body.get("facts_url"),
+                                  tag=body.get("tag"), period=body.get("period"))
+            tag = out["tag"]
+        else:
+            out = ingest.from_cik(cik, DATA_DIR)
+            tag = out["tag"]
+    except ingest.IngestError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _CACHE.pop(tag, None)
+    return JSONResponse({"ingested": out, "meta": load(tag).meta()})
 
 
 @app.get("/api/meta")

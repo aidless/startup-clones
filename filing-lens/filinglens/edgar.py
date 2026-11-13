@@ -107,6 +107,10 @@ def _strip_toc(text: str, matches: list) -> list:
     return [m for m, d in zip(matches, drop) if not d]
 
 
+MIN_SEGMENT_CHARS = 400     # 低于这个长度的同 Item 片段当目录/交叉引用碎屑
+MIN_BODY_RATIO = 0.15       # 结构化抽取至少保留 15% 正文，否则判定结构识别失败
+
+
 def split_sections(text: str) -> list[Section]:
     matches = _strip_toc(text, list(ITEM_RE.finditer(text)))
     found: list[tuple[int, Section]] = []
@@ -119,16 +123,29 @@ def split_sections(text: str) -> list[Section]:
         title = ITEM_NAMES.get(item, m.group(2).strip()[:80] or f"Item {item}")
         found.append((m.start(), Section(item=item, title=title, text=body)))
 
-    # 同一个 Item 可能命中多次：交叉引用页（"Item 4. Mine Safety ... 21"）、
-    # 10-K Summary 索引、以及正文本身。只保留正文那份 —— 也就是最长的那份。
-    best: dict[str, tuple[int, Section]] = {}
+    # 同一个 Item 可能命中多次，两种成因：
+    #   ① 目录页 / 交叉引用（"Item 4. Mine Safety ... 21"）——碎片，该丢；
+    #   ② 每页页眉重复印着 "Item 1"（Microsoft 的 10-K 就是这样）——正文被切成
+    #      每段只有几千字，若"只留最长的那份"，正文会丢掉 88%（实测 393k 字符剩 45k）。
+    # 所以按"够长的都留、按文档顺序拼起来"处理：碎屑（< MIN_SEGMENT）丢掉，
+    # 实质段落（>= MIN_SEGMENT）合并。代价是交叉引用带进来的那点内容会被重复归属。
+    merged: dict[str, list[Section]] = {}
     for pos, sec in found:
-        cur = best.get(sec.item)
-        if cur is None or len(sec.text) > len(cur[1].text):
-            best[sec.item] = (pos, sec)
-    sections = [sec for _, sec in sorted(best.values(), key=lambda x: x[0])]
-    if not sections:
-        sections.append(Section(item="0", title="Full Text", text=text.strip()))
+        merged.setdefault(sec.item, []).append(sec)
+
+    sections: list[Section] = []
+    for item, segs in merged.items():
+        substantive = [s for s in segs if len(s.text) >= MIN_SEGMENT_CHARS]
+        keep = substantive or [max(segs, key=lambda s: len(s.text))]
+        sections.append(Section(item=item, title=keep[0].title,
+                                text="\n\n".join(s.text for s in keep)))
+
+    # 结构识别失败时不能返回碎片：有的 10-K 正文根本不用 "Item N." 做标题
+    # （Intel 就是：只有目录页写 Item，正文是 "Risk Factors" 这种裸标题）。
+    # 这时整篇当一段文本，检索照常工作——只是失去 Item 归属。
+    body_chars = sum(len(s.text) for s in sections)
+    if not sections or body_chars < MIN_BODY_RATIO * len(text):
+        return [Section(item="0", title="Full Text", text=text.strip())]
     return sections
 
 

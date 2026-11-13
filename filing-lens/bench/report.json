@@ -1,0 +1,1465 @@
+{
+  "tally": {
+    "companies": 20,
+    "numeric_asked": 55,
+    "numeric_correct": 55,
+    "numeric_na": 5,
+    "na_list": [
+      [
+        "0001018724",
+        "r_and_d"
+      ],
+      [
+        "0000796343",
+        "r_and_d"
+      ],
+      [
+        "0000021344",
+        "r_and_d"
+      ],
+      [
+        "0000104169",
+        "r_and_d"
+      ],
+      [
+        "0000019617",
+        "r_and_d"
+      ]
+    ],
+    "textual_asked": 20,
+    "textual_cited": 20,
+    "refusal_asked": 40,
+    "refusal_refused": 40,
+    "headcount_asked": 20,
+    "headcount_numbered": 18,
+    "headcount_refused": 2,
+    "headcount_wrong": 0
+  },
+  "rows": [
+    {
+      "tag": "0000320193",
+      "doc": "0000320193_10k_2026-09-26",
+      "period": "2026-09-26",
+      "sections": 20,
+      "chunks": 419,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 478834000000.0,
+          "got": 478830000000.0,
+          "rel": 8e-06,
+          "fy": 2026,
+          "text": "营收：FY2026 为 478.83B USD；近三年同比 FY2024 +2.0%、FY2025 +6.4%、FY2026 +15.1%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 132175000000.0,
+          "got": 132180000000.0,
+          "rel": 3.8e-05,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 132.18B USD；近三年同比 FY2024 -3.4%、FY2025 +19.5%、FY2026 +18.0%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 45765000000.0,
+          "got": 45770000000.0,
+          "rel": 0.000109,
+          "fy": 2026,
+          "text": "研发：FY2026 为 45.77B USD；近三年同比 FY2024 +4.9%、FY2025 +10.1%、FY2026 +32.5%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "The Company’s future gross margins can be impacted by a variety of factors, as discussed in Part I, Item 1A of this Form 10-K under the heading “Risk Factors.” As a result, the Company believes, in general, gross margins will be subject to volatility and downward pressure."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "167,000 full-time equivalent employees",
+          "text": "As of September 26, 2026, the Company had approximately 167,000 full-time equivalent employees."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000789019",
+      "doc": "0000789019_10k_2026-06-30",
+      "period": "2026-06-30",
+      "sections": 21,
+      "chunks": 607,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 331839000000.0,
+          "got": 331840000000.0,
+          "rel": 3e-06,
+          "fy": 2026,
+          "text": "营收：FY2026 为 331.84B USD；近三年同比 FY2024 +15.7%、FY2025 +14.9%、FY2026 +17.8%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 133749000000.0,
+          "got": 133750000000.0,
+          "rel": 7e-06,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 133.75B USD；近三年同比 FY2024 +21.8%、FY2025 +15.5%、FY2026 +31.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 35562000000.0,
+          "got": 35560000000.0,
+          "rel": 5.6e-05,
+          "fy": 2026,
+          "text": "研发：FY2026 为 35.56B USD；近三年同比 FY2024 +8.5%、FY2025 +10.1%、FY2026 +9.5%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Refer to Risk Factors (Part I, Item 1A of this Form 10-K) for a discussion of these factors and other risks."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "223,000 people",
+          "text": "As of June 30, 2026, we employed approximately 223,000 people on a full-time basis, 121,000 in the U.S."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001652044",
+      "doc": "0001652044_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 20,
+      "chunks": 740,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 350018000000.0,
+          "got": 350020000000.0,
+          "rel": 6e-06,
+          "fy": 2024,
+          "text": "营收：FY2024 为 350.02B USD；近三年同比 FY2022 +74.7%、FY2023 +8.7%、FY2024 +13.9%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 132170000000.0,
+          "got": 132169999999.99998,
+          "rel": 0.0,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 132.17B USD；近三年同比 FY2023 +23.1%、FY2024 +35.7%、FY2025 +32.0%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 61087000000.0,
+          "got": 61090000000.0,
+          "rel": 4.9e-05,
+          "fy": 2025,
+          "text": "研发：FY2025 为 61.09B USD；近三年同比 FY2023 +15.0%、FY2024 +8.6%、FY2025 +23.8%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For additional information about competition, see Item 1A Risk Factors of this Annual Report on Form 10-K."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "190,820 employees",
+          "text": "As of December 31, 2025, Alphabet had 190,820 employees."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001018724",
+      "doc": "0001018724_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 20,
+      "chunks": 546,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 716924000000.0,
+          "got": 716920000000.0,
+          "rel": 6e-06,
+          "fy": 2025,
+          "text": "营收：FY2025 为 716.92B USD；近三年同比 FY2023 +11.8%、FY2024 +11.0%、FY2025 +12.4%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 77670000000.0,
+          "got": 77670000000.0,
+          "rel": 0.0,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 77.67B USD；近三年同比 FY2023 +1217.7%、FY2024 +94.7%、FY2025 +31.1%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "n/a",
+          "truth": null,
+          "text": "(3) Intangible assets acquired in a business combination that are in-process and used in research and development activities (“IPR&D”) are considered indefinite-lived until the completion or abandonment of the research and development efforts."
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "The events and consequences discussed in these risk factors could, in circumstances we may or may not be able to accurately predict, recognize, or control, have a material adverse effect on our business, growth, reputation, prospects, financial condition, operating results (including components of our financial results), cash flows, liquidity, and stock price. These risk factors do not identify all risks that we face; our operations could also be affected by factors, events, or uncertainties that are not presently known to us or that we currently do not consider to present significant risks to our operations."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "1,576,000 full-time and part-time employees",
+          "text": "As of December 31, 2025, we employed approximately 1,576,000 full-time and part-time employees."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001045810",
+      "doc": "0001045810_10k_2026-01-25",
+      "period": "2026-01-25",
+      "sections": 20,
+      "chunks": 657,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 26914000000.0,
+          "got": 26910000000.0,
+          "rel": 0.000149,
+          "fy": 2022,
+          "text": "营收：FY2022 为 26.91B USD；近三年同比 FY2020 +40.8%、FY2021 +437.0%、FY2022 +61.4%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 120067000000.0,
+          "got": 120070000000.0,
+          "rel": 2.5e-05,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 120.07B USD；近三年同比 FY2024 +581.3%、FY2025 +144.9%、FY2026 +64.8%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 18497000000.0,
+          "got": 18500000000.0,
+          "rel": 0.000162,
+          "fy": 2026,
+          "text": "研发：FY2026 为 18.50B USD；近三年同比 FY2024 +18.2%、FY2025 +48.9%、FY2026 +43.2%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Risk Factors – Risks Related to Regulatory, Legal, Our Stock and Other Matters” for a further discussion of the potential impact of these factors on our business."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "42,000 employees",
+          "text": "As of the end of fiscal year 2026, we had approximately 42,000 employees in 38 countries; 31,000 were engaged in research and development and 11,000 were engaged in sales, marketing, operations, and administrative positions."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001326801",
+      "doc": "0001326801_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 20,
+      "chunks": 825,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 200966000000.0,
+          "got": 200970000000.0,
+          "rel": 2e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 200.97B USD；近三年同比 FY2023 +15.7%、FY2024 +21.9%、FY2025 +22.2%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 60458000000.0,
+          "got": 60460000000.0,
+          "rel": 3.3e-05,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 60.46B USD；近三年同比 FY2023 +68.5%、FY2024 +59.5%、FY2025 -3.0%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 57372000000.0,
+          "got": 57370000000.0,
+          "rel": 3.5e-05,
+          "fy": 2025,
+          "text": "研发：FY2025 为 57.37B USD；近三年同比 FY2023 +8.9%、FY2024 +14.0%、FY2025 +30.8%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For additional information about these risks, see Part I, Item 1A, \"Risk Factors\" in this Annual Report on Form 10-K."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "78,865 employees",
+          "text": "We had a global workforce of 78,865 employees as of December 31, 2025, and we have offices in more than 90 cities around the world."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001318605",
+      "doc": "0001318605_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 20,
+      "chunks": 642,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 94827000000.0,
+          "got": 94830000000.0,
+          "rel": 3.2e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 94.83B USD；近三年同比 FY2023 +350.9%、FY2024 +0.9%、FY2025 -2.9%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 3794000000.0,
+          "got": 3790000000.0,
+          "rel": 0.001054,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 3.79B USD；近三年同比 FY2023 +19.4%、FY2024 -52.7%、FY2025 -46.5%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 6411000000.0,
+          "got": 6410000000.0,
+          "rel": 0.000156,
+          "fy": 2025,
+          "text": "研发：FY2025 为 6.41B USD；近三年同比 FY2023 +29.1%、FY2024 +14.4%、FY2025 +41.2%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Pricing for these materials is governed by market conditions and may fluctuate due to various factors outside of our control, such as supply and demand and market speculation. We continue to localize and de-risk our supply chains across regions, including through vertical integration where possible, such as our in-house lithium refinery in Texas, which began operations in January 2026."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "29,000 employees",
+          "text": "Hiring, evaluation, and promotion decisions are based on skills and performance, with over 29,000 employees globally advancing their careers in 2025, and 69% of managers promoted internally."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001730168",
+      "doc": "0001730168_10k_2025-11-02",
+      "period": "2025-11-02",
+      "sections": 19,
+      "chunks": 712,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 63887000000.0,
+          "got": 63890000000.0,
+          "rel": 4.7e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 63.89B USD；近三年同比 FY2023 +7.9%、FY2024 +44.0%、FY2025 +23.9%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 5895000000.0,
+          "got": 5890000000.0,
+          "rel": 0.000848,
+          "fy": 2024,
+          "text": "净利润：FY2024 为 5.89B USD；近三年同比 FY2024 +428.7%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 10977000000.0,
+          "got": 10980000000.0,
+          "rel": 0.000273,
+          "fy": 2025,
+          "text": "研发：FY2025 为 10.98B USD；近三年同比 FY2023 +6.8%、FY2024 +77.2%、FY2025 +17.9%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "The trading price of our common stock has, at times, fluctuated significantly and could be subject to wide fluctuations in response to any of the risk factors listed in this “Risk Factors” section, and others, including:"
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "33,000 employees",
+          "text": "As of November 2, 2025, we had approximately 33,000 employees worldwide, with approximately 57% in research and development roles."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001341439",
+      "doc": "0001341439_10k_2026-05-31",
+      "period": "2026-05-31",
+      "sections": 20,
+      "chunks": 700,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 67357000000.0,
+          "got": 67360000000.0,
+          "rel": 4.5e-05,
+          "fy": 2026,
+          "text": "营收：FY2026 为 67.36B USD；近三年同比 FY2024 +6.0%、FY2025 +8.4%、FY2026 +17.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 17087000000.0,
+          "got": 17090000000.0,
+          "rel": 0.000176,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 17.09B USD；近三年同比 FY2024 +23.1%、FY2025 +18.9%、FY2026 +37.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 10272000000.0,
+          "got": 10270000000.0,
+          "rel": 0.000195,
+          "fy": 2026,
+          "text": "研发：FY2026 为 10.27B USD；近三年同比 FY2024 +3.4%、FY2025 +10.6%、FY2026 +4.2%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For more information about the competitive risks we face, refer to Item 1A Risk Factors included elsewhere in this Annual Report."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "141,000 full-time employees",
+          "text": "As of May 31, 2026, we employed approximately 141,000 full-time employees, of which approximately 49,000 were employed in the U.S."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0001108524",
+      "doc": "0001108524_10k_2026-01-31",
+      "period": "2026-01-31",
+      "sections": 20,
+      "chunks": 783,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 41525000000.0,
+          "got": 41520000000.0,
+          "rel": 0.00012,
+          "fy": 2025,
+          "text": "营收：FY2025 为 41.52B USD；近三年同比 FY2023 +18.4%、FY2024 +11.2%、FY2025 +19.1%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 7457000000.0,
+          "got": 7460000000.0,
+          "rel": 0.000402,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 7.46B USD；近三年同比 FY2023 -85.6%、FY2024 +1888.5%、FY2025 +80.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 5993000000.0,
+          "got": 5990000000.0,
+          "rel": 0.000501,
+          "fy": 2025,
+          "text": "研发：FY2025 为 5.99B USD；近三年同比 FY2023 +13.2%、FY2024 -2.9%、FY2025 +22.2%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Our forward-looking statements and factors that might cause future actual results to differ materially from our recent results or those projected in the forward-looking statements include, but are not limited to, those discussed in the section titled “Forward-Looking Information” and “Risk Factors” of this Annual Report on Form 10-K. Except as required by law, we assume no obligation to update the forward-looking statements or our risk factors for any reason."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "83,334 employees",
+          "text": "As of January 31, 2026, we had 83,334 employees."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000796343",
+      "doc": "0000796343_10k_2025-11-28",
+      "period": "2025-11-28",
+      "sections": 19,
+      "chunks": 627,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 23769000000.0,
+          "got": 23770000000.0,
+          "rel": 4.2e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 23.77B USD；近三年同比 FY2023 +10.2%、FY2024 +10.8%、FY2025 +10.5%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 7130000000.0,
+          "got": 7130000000.0,
+          "rel": 0.0,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 7.13B USD；近三年同比 FY2023 +14.1%、FY2024 +2.4%、FY2025 +28.2%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "n/a",
+          "truth": null,
+          "text": "Research and development expenses consist primarily of compensation and contracted costs associated with software development, third-party hosting services and data center costs including AI training costs, related facilities costs, and expenses associated with computer equipment and software used in development activities. Research and development expenses increased during fiscal 2025 as compared"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "See the section titled “Risk Factors” contained in Part I , Item 1A of this report for additional information regarding risks related to competition."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "31,360 people",
+          "text": "As of November 28, 2025, we employed 31,360 people, of which 50% were in the United States and 50% were in our international locations."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000858877",
+      "doc": "0000858877_10k_2026-07-25",
+      "period": "2026-07-25",
+      "sections": 20,
+      "chunks": 744,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 63325000000.0,
+          "got": 63330000000.0,
+          "rel": 7.9e-05,
+          "fy": 2026,
+          "text": "营收：FY2026 为 63.33B USD；近三年同比 FY2024 -5.6%、FY2025 +5.3%、FY2026 +11.8%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 13267000000.0,
+          "got": 13270000000.0,
+          "rel": 0.000226,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 13.27B USD；近三年同比 FY2024 -18.2%、FY2025 -1.4%、FY2026 +30.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 9563000000.0,
+          "got": 9560000000.0,
+          "rel": 0.000314,
+          "fy": 2026,
+          "text": "研发：FY2026 为 9.56B USD；近三年同比 FY2024 +5.7%、FY2025 +16.5%、FY2026 +2.8%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For additional information and a further discussion of impacts and risks related to cybersecurity matters, see the risk factors under the “Item 1A. Risk Factors— Risk Related to Cybersecurity, Privacy, and Regulatory Requirements” heading."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "82,400 employees",
+          "text": "As of July 25, 2026, we had approximately 82,400 employees and they are categorized as follows:"
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000050863",
+      "doc": "0000050863_10k_2025-12-27",
+      "period": "2025-12-27",
+      "sections": 1,
+      "chunks": 908,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 52853000000.0,
+          "got": 52850000000.0,
+          "rel": 5.7e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 52.85B USD；近三年同比 FY2023 -14.0%、FY2024 -2.1%、FY2025 -0.5%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": -267000000.0,
+          "got": -267000000.0,
+          "rel": 0.0,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 -267.0M USD；近三年同比 FY2023 -78.9%、FY2024 -1210.5%、FY2025 +98.6%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 13774000000.0,
+          "got": 13770000000.0,
+          "rel": 0.00029,
+          "fy": 2025,
+          "text": "研发：FY2025 为 13.77B USD；近三年同比 FY2023 -8.5%、FY2024 +3.1%、FY2025 -16.8%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "▪ fluctuations in the market values of our domestic and international investments, and in the capital and credit markets, which can be negatively affected by liquidity, credit deterioration or losses, interest rate changes, financial results, political risk, sovereign risk or other factors."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "number": null,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（全文没有「N 名员工」这类陈述，无法给出人数）"
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000002488",
+      "doc": "0000002488_10k_2025-12-27",
+      "period": "2025-12-27",
+      "sections": 20,
+      "chunks": 692,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 34639000000.0,
+          "got": 34640000000.0,
+          "rel": 2.9e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 34.64B USD；近三年同比 FY2023 -3.9%、FY2024 +13.7%、FY2025 +34.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 4335000000.0,
+          "got": 4330000000.0,
+          "rel": 0.001153,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 4.33B USD；近三年同比 FY2023 -35.3%、FY2024 +92.2%、FY2025 +164.2%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 8091000000.0,
+          "got": 8090000000.0,
+          "rel": 0.000124,
+          "fy": 2025,
+          "text": "研发：FY2025 为 8.09B USD；近三年同比 FY2023 +17.3%、FY2024 +10.0%、FY2025 +25.3%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Our Board considers cybersecurity risk as part of its risk oversight function and has delegated to the Audit and Finance Committee (Committee) oversight of cybersecurity and other information technology risks. The Committee oversees management’s implementation of our cybersecurity risk management program."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "31,000 employees",
+          "text": "As of December 27, 2025, we had approximately 31,000 employees in our global workforce."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000804328",
+      "doc": "0000804328_10k_2026-09-27",
+      "period": "2026-09-27",
+      "sections": 20,
+      "chunks": 609,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 43120000000.0,
+          "got": 43120000000.0,
+          "rel": 0.0,
+          "fy": 2026,
+          "text": "营收：FY2026 为 43.12B USD；近三年同比 FY2024 +8.8%、FY2025 +13.7%、FY2026 -2.6%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 13628000000.0,
+          "got": 13630000000.0,
+          "rel": 0.000147,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 13.63B USD；近三年同比 FY2024 +40.2%、FY2025 -45.4%、FY2026 +145.9%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 10207000000.0,
+          "got": 10210000000.0,
+          "rel": 0.000294,
+          "fy": 2026,
+          "text": "研发：FY2026 为 10.21B USD；近三年同比 FY2024 +0.9%、FY2025 +1.7%、FY2026 +12.9%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Risk Factors” included in this Annual Report."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "number": null,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（全文没有「N 名员工」这类陈述，无法给出人数）"
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000097476",
+      "doc": "0000097476_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 16,
+      "chunks": 401,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 17682000000.0,
+          "got": 17680000000.0,
+          "rel": 0.000113,
+          "fy": 2025,
+          "text": "营收：FY2025 为 17.68B USD；近三年同比 FY2023 -12.5%、FY2024 -10.7%、FY2025 +13.1%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 5001000000.0,
+          "got": 5000000000.0,
+          "rel": 0.0002,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 5.00B USD；近三年同比 FY2023 -25.6%、FY2024 -26.3%、FY2025 +4.2%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 2083000000.0,
+          "got": 2080000000.0,
+          "rel": 0.00144,
+          "fy": 2025,
+          "text": "研发：FY2025 为 2.08B USD；近三年同比 FY2023 +11.6%、FY2024 +5.1%、FY2025 +6.3%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For more information about cybersecurity risks, see the Risk factors discussion in Item 1A of this Form 10-K."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "33,000 employees",
+          "text": "At December 31, 2025, we had about 33,000 employees worldwide."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000080424",
+      "doc": "0000080424_10k_2026-06-30",
+      "period": "2026-06-30",
+      "sections": 20,
+      "chunks": 619,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 87032000000.0,
+          "got": 87030000000.0,
+          "rel": 2.3e-05,
+          "fy": 2026,
+          "text": "营收：FY2026 为 87.03B USD；近三年同比 FY2024 +2.5%、FY2025 +0.3%、FY2026 +3.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 16046000000.0,
+          "got": 16050000000.0,
+          "rel": 0.000249,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 16.05B USD；近三年同比 FY2024 +1.5%、FY2025 +7.4%、FY2026 +0.4%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "correct",
+          "truth": 2100000000.0,
+          "got": 2100000000.0,
+          "rel": 0.0,
+          "fy": 2026,
+          "text": "研发：FY2026 为 2.10B USD；近三年同比 FY2024 +0.0%、FY2025 +5.0%、FY2026 +0.0%。"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "For additional information on risk factors that could impact our business results, please refer to Risk Factors in Part I, Item 1A of the Company's Form 10-K for the fiscal year ended June 30, 2026."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "104,000 employees",
+          "text": "As of June 30, 2026, the Company had approximately 104,000 employees, a decrease of 4% versus the prior year due to the ongoing restructuring program."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000021344",
+      "doc": "0000021344_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 20,
+      "chunks": 1132,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 47941000000.0,
+          "got": 47940000000.0,
+          "rel": 2.1e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 47.94B USD；近三年同比 FY2023 +6.4%、FY2024 +2.9%、FY2025 +1.9%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 13107000000.0,
+          "got": 13110000000.0,
+          "rel": 0.000229,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 13.11B USD；近三年同比 FY2023 +12.3%、FY2024 -0.8%、FY2025 +23.3%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "n/a",
+          "truth": null,
+          "text": "Total stock-based compensation expense was $ 279 million, $ 286 million and $ 251 million in 2025, 2024 and 2023, respectively. In 2023, the Company recorded stock-based compensation expense of $ 254 million in the line item selling, general and administrative expenses in our consolidated statement of income."
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "Risk Factors” of this report."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "65,900",
+          "text": "As of December 31, 2025 and 2024, our Company had approximately 65,900 and 69,700 employees, respectively, of which approximately 8,900 were located in the United States."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000104169",
+      "doc": "0000104169_10k_2026-01-31",
+      "period": "2026-01-31",
+      "sections": 18,
+      "chunks": 600,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 706413000000.0,
+          "got": 706410000000.0,
+          "rel": 4e-06,
+          "fy": 2026,
+          "text": "营收：FY2026 为 706.41B USD；近三年同比 FY2024 +6.1%、FY2025 +5.0%、FY2026 +4.7%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 21893000000.0,
+          "got": 21890000000.0,
+          "rel": 0.000137,
+          "fy": 2026,
+          "text": "净利润：FY2026 为 21.89B USD；近三年同比 FY2024 +32.8%、FY2025 +25.3%、FY2026 +12.6%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "n/a",
+          "truth": null,
+          "text": "In July 2025, the One Big Beautiful Bill Act (the \"OBBB Act\") was enacted, introducing a series of corporate tax changes in the U.S., including 100% bonus depreciation on qualified property and full expensing for research and development expenditures."
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "The following risk factors do not identify all risks that we may face. The disclosures below reflect our beliefs and opinions as to risk factors that could materially and adversely affect our business operations and our securities in the future."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "2.1 million associates",
+          "text": "Our business is focused on serving people and this is delivered by our approximately 2.1 million associates around the world with approximately 1.6 million associates in the U.S."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    },
+    {
+      "tag": "0000019617",
+      "doc": "0000019617_10k_2025-12-31",
+      "period": "2025-12-31",
+      "sections": 15,
+      "chunks": 2964,
+      "has_xbrl": true,
+      "cases": [
+        {
+          "kind": "numeric",
+          "metric": "revenue",
+          "q": "营收多少？",
+          "verdict": "correct",
+          "truth": 182447000000.0,
+          "got": 182450000000.0,
+          "rel": 1.6e-05,
+          "fy": 2025,
+          "text": "营收：FY2025 为 182.45B USD；近三年同比 FY2023 +22.9%、FY2024 +12.3%、FY2025 +2.8%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "net_income",
+          "q": "净利润多少？",
+          "verdict": "correct",
+          "truth": 57048000000.0,
+          "got": 57050000000.0,
+          "rel": 3.5e-05,
+          "fy": 2025,
+          "text": "净利润：FY2025 为 57.05B USD；近三年同比 FY2023 +31.5%、FY2024 +18.0%、FY2025 -2.4%。"
+        },
+        {
+          "kind": "numeric",
+          "metric": "r_and_d",
+          "q": "研发费用多少？",
+          "verdict": "n/a",
+          "truth": null,
+          "text": "Income Statement - Reporting Comprehensive Income - Expense Disaggregation Disclosures: Disaggregation of Income Statement Expenses"
+        },
+        {
+          "kind": "textual",
+          "q": "主要风险因素有哪些？",
+          "verdict": "cited",
+          "confidence": 1.0,
+          "text": "The above summary is subject in its entirety to the discussion of the risk factors set forth below."
+        },
+        {
+          "kind": "headcount",
+          "q": "有多少员工？",
+          "verdict": "numbered",
+          "confidence": 0.8,
+          "number": "318,512 employees",
+          "text": "As of December 31, 2025, JPMorganChase had 318,512 employees globally."
+        },
+        {
+          "kind": "refusal",
+          "q": "CEO 的生日是哪天？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。（问题里的中文没有命中词表里的任何概念，无法桥接到英文原文）"
+        },
+        {
+          "kind": "refusal",
+          "q": "公司有几家门店？",
+          "verdict": "refused",
+          "confidence": 0.0,
+          "text": "文件里没有足够证据回答这个问题（证据不足，不作答）。"
+        }
+      ]
+    }
+  ]
+}
