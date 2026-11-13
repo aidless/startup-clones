@@ -22,7 +22,15 @@ REFUSAL = "文件里没有足够证据回答这个问题（证据不足，不作
 # 数字通道的门槛：只要问题里随便出现 "revenue" 就走 XBRL 会抢答
 # （"top customers concentration revenue" 被答成营收同比，明显答非所问）。
 NUMERIC_CUES = ("how much", "what was", "what were", "同比增长", "同比", "多少", "金额", "revenue in")
-QUALITATIVE_CUES = ("risk", "why", "how do", "how does", "explain", "strategy", "customer", "what are", "为什么")
+# 定性线索必须够宽：只要问到「为什么/原因/驱动」，就不能用金额通道回答。
+# 原先缺 reason/driver/decline，于是 "what was the reason for the revenue decline?"
+# 被答成「revenue FY2026 为 478.83B」（status=ok conf=1.0），完全没有回答问题。
+QUALITATIVE_CUES = (
+    "risk", "why", "how do", "how does", "explain", "strategy", "customer", "what are",
+    "reason", "reasons", "driver", "drivers", "decline", "declined", "increase driven",
+    "what led", "what caused", "cause", "causes", "headwind", "tailwind", "outlook",
+    "为什么", "为何", "原因", "驱动", "因素", "影响", "展望", "怎么做到",
+)
 
 
 def is_numeric_question(q: str) -> bool:
@@ -137,6 +145,22 @@ def _sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def wants_headcount_context(question: str) -> bool:
+    """问的是不是「有多少员工」。
+
+    两路判定：中文走词表概念组，英文直接认词。原先只有中文那一路，
+    于是英文问 "how many employees does the company have?" 拿不到 groups=[]，
+    headcount 通道与摘录通道的过滤同时失效，返回一段 AppleCare 介绍还标 status=ok。
+    """
+    if HEADCOUNT_QUERY_RE.search(question):
+        return True
+    return any("employees" in g for g in glossary.expand_groups(question))
+
+
+HEADCOUNT_QUERY_RE = re.compile(
+    r"\b(?:employees?|headcount|workforce|associates|personnel)\b", re.I)
+
+
 class Answerer:
     def __init__(self, chunks: list[Chunk], facts_conn: sqlite3.Connection | None = None):
         self.index = BM25Index().add(chunks)
@@ -225,8 +249,7 @@ class Answerer:
         """
         if not QUANTITY_RE.search(question):
             return None
-        groups = glossary.expand_groups(question)
-        if not any("employees" in g for g in groups):
+        if not wants_headcount_context(question):
             return None
         pool = self.index.search("employees people workforce headcount employed", k=60)
         best = None
@@ -288,7 +311,7 @@ class Answerer:
         q = set(tokenize(q_expanded))
         wants_number = bool(QUANTITY_RE.search(question))
         # 问员工数就必须给出"N 个员工"，不能拿一段提到 employees 的闲话充数
-        wants_headcount = wants_number and any("employees" in g for g in groups)
+        wants_headcount = wants_number and wants_headcount_context(question)
 
         # 「多少/几个」类问题要看多段：正确答案常在别的段落（问员工数，命中段讲的是
         # 研发费用里的 headcount 成本）。所以按句子打分，跨 top-3 段落挑带数字的句子。

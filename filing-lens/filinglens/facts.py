@@ -32,6 +32,15 @@ METRIC_ALIASES: dict[str, list[str]] = {
     "营业利润": ["OperatingIncomeLoss"],
     "assets": ["Assets"],
     "总资产": ["Assets"],
+    # 现金流与现金余额是两个科目，混了就是差 4 倍（Apple FY2026：145.1B vs 36.3B）。
+    # 长别名优先（resolve_metric 取最长命中），所以 "cash flow from operations" 不会被 "cash" 抢走。
+    "cash flow from operations": ["NetCashProvidedByUsedInOperatingActivities"],
+    "cash flow from operating activities": ["NetCashProvidedByUsedInOperatingActivities"],
+    "operating cash flow": ["NetCashProvidedByUsedInOperatingActivities"],
+    "cash provided by operating activities": ["NetCashProvidedByUsedInOperatingActivities"],
+    "经营现金流": ["NetCashProvidedByUsedInOperatingActivities"],
+    "经营活动现金流": ["NetCashProvidedByUsedInOperatingActivities"],
+    "经营活动产生的现金流": ["NetCashProvidedByUsedInOperatingActivities"],
     "cash": ["CashAndCashEquivalentsAtCarryingValue"],
     "现金": ["CashAndCashEquivalentsAtCarryingValue"],
     "inventory": ["InventoryNet"],
