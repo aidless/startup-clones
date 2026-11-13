@@ -28,7 +28,15 @@ FORM_RE = re.compile(r"Form\s+(\d{1,2}-[A-Z]{1,3})\s+for the fiscal year ended\s
 FILE_NO_RE = re.compile(r"File No\.?\s*([0-9]{1,3}-[0-9]{1,6})")
 DATED_RE = re.compile(r"dated\s+(" + _MONTH_ALT + r"\s+\d{1,2},\s+\d{4})")
 NUMBERED_RE = re.compile(r"^\s*(\d{1,2})\.\s+(\S.*)$")
-CONFIDENTIAL_MARKERS = ("FOIA CONFIDENTIAL TREATMENT", "Rule 83", "17 C.F.R. § 200.83")
+# 保密标记必须按「正则 + 忽略大小写 + 容忍标点缺失」匹配：
+# 真实函件里抬头常被 OCR 或人工录成小写（`rule 83 and 17 cfr 200.83`），
+# 原实现用 `m in joined` 精确子串 —— 小写就判 False，函件被路由到 compliance
+# 而不是 legal，正是 Rule 83 要挡住的泄密方向。
+CONFIDENTIAL_RES = (
+    re.compile(r"foia\s+confidential\s+treatment", re.I),
+    re.compile(r"rule\s*83\b", re.I),
+    re.compile(r"17\s*c\.?\s*f\.?\s*r\.?\s*(?:§\s*)?200\.83", re.I),
+)
 DEAR_RE = re.compile(r"^Dear\b", re.I)
 # 回复函里逐条回应的常见引导语
 REPLY_LEAD_RE = re.compile(
@@ -127,7 +135,7 @@ def parse_letter(text: str, doc_id: str = "DOC") -> Letter:
         file_no=file_m.group(1) if file_m else None,
         responds_to_raw=re.sub(r"\s+", " ", dated_m.group(1)) if dated_m else None,
         responds_to=parse_date(dated_m.group(1)) if dated_m else None,
-        confidential=any(m in joined for m in CONFIDENTIAL_MARKERS),
+        confidential=any(r.search(joined) for r in CONFIDENTIAL_RES),
         body_chars=len(joined),
     )
 

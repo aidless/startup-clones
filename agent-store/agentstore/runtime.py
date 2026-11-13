@@ -57,7 +57,7 @@ class Runtime:
             replay = Execution(request_id, agent_id, seen.version, buyer, seen.ok,
                                output=seen.output, error=seen.error,
                                charged_cents=seen.charged_cents, duplicate=True)
-            _audit(replay, "gate", result="duplicate")
+            _audit(replay, "gate", result="duplicate", dedup=True)
             return replay
 
         ex = Execution(request_id, agent_id, v.version, buyer, False)

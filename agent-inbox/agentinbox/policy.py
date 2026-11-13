@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -73,6 +74,10 @@ class Policy:
         self.audit: list[dict] = []
         self.approvals: list[Approval] = []
         self._seq = 0
+        # 审批号必须跨实例唯一。原先每实例从 AP-0001 自增：重启或多实例部署后，
+        # 第二封信的 AP-0001 与第一封撞号，decide() 按号查找会落到另一封信上。
+        # 加 4 位实例令牌（进程级随机）后，号仍可读、可排序，但不会撞。
+        self._instance = secrets.token_hex(2).upper()
 
     # ---- 入口 ----
     def check_inbound(self, inbound: Inbound) -> Decision:
@@ -104,7 +109,7 @@ class Policy:
 
     def _queue(self, inbound: Inbound, text: str, risk: str) -> Decision:
         self._seq += 1
-        aid = f"AP-{self._seq:04d}"
+        aid = f"AP-{self._instance}-{self._seq:04d}"
         self.approvals.append(Approval(aid, inbound.thread_id, text, risk, time.time()))
         self._log(inbound, "pending_approval", f"{aid} risk={risk}")
         return Decision(True, f"已进入审批队列 {aid}（{risk}）",
