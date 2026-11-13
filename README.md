@@ -1,12 +1,12 @@
 # startup-clones
 
-六个 **可运行的内核**，分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
+六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**71 个测试，0 个 mock 掉的断言，全部离线可跑。**
+**308 个测试，0 个 mock 掉的断言，全部离线可跑。**
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 六个子项目逐个跑，共 71 passed
+make test      # 七个子项目逐个跑，共 308 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 ```
 
@@ -14,12 +14,12 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 
 | 目录 | 对标（融资事实） | 一句话内核 | 测试 |
 | --- | --- | --- | --- |
-| [`geo-radar/`](geo-radar) | The Prompting Company · 2026-11-03 $6.5M 种子 | 测「AI 推荐里有没有你」：提示词生成 → 多模型跑 → 提及抽取 → 站位报告 | 10 |
-| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 15 |
-| [`audit-loop/`](audit-loop) | Clark · 2026-11-02 $11M 种子（Touring Capital） | 给事务所的审计程序内核：银行调节/账龄/截止测试 → 例外清单 + 可归档 Excel 底稿 | 11 |
-| [`cruxline/`](cruxline) | Crux Labs · 2026-10-30 $6M+ 种子 | 把「专家觉得这算做好了」变成 rubric + kappa 校准 + 版本回归门禁，**致命项一票否决** | 16 |
-| [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 8 |
-| [`agent-store/`](agent-store) | Cowboy · 2026 年 $5M 种子 | agent 商店：不可变版本 + 最小授权 + 幂等计量 + 分成账单 | 11 |
+| [`geo-radar/`](geo-radar) | The Prompting Company · 2026-11-03 $6.5M 种子 | 测「AI 推荐里有没有你」：提示词生成 → 多模型跑 → 提及抽取 → 站位报告 | 27 |
+| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 93 |
+| [`audit-loop/`](audit-loop) | Clark · 2026-11-02 $11M 种子（Touring Capital） | 给事务所的审计程序内核：银行调节/账龄/截止测试 → 例外清单 + 可归档 Excel 底稿 | 36 |
+| [`cruxline/`](cruxline) | Crux Labs · 2026-10-30 $6M+ 种子 | 把「专家觉得这算做好了」变成 rubric + kappa 校准 + 版本回归门禁，**致命项一票否决** | 52 |
+| [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 47 |
+| [`agent-store/`](agent-store) | Cowboy · 2026 年 $5M 种子 | agent 商店：不可变版本 + 最小授权 + 幂等计量 + 分成账单 | 42 |
 
 
 ## 真实数据状态
@@ -90,7 +90,10 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-12）
 
-- 测试：**126 passed**（geo 13 / filing 40 / audit 15 / crux 22 / inbox 15 / store 21）
+- 测试：**308 passed**（geo 27 / filing 93 / audit 36 / crux 52 / inbox 47 / store 42 / console 11）
+- 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
+  已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——
+  测试写的是「设计时以为会发生什么」，复现测试写的是「真实输入会发生什么」
 - 真实数据：`filing-lens` 20 家公司 10-K（数字题 55/55、员工数 18/20、该拒答 40/40）、
   `audit-loop` Apple 8 年 + Microsoft 9 年、`cruxline` 60 条真实 agent 轨迹、
   `agent-inbox` Apple FY2023 CORRESP 函件、`agent-store` 16 个真实 MCP server、

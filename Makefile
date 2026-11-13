@@ -1,7 +1,7 @@
 # 注意：本工作区路径含冒号（F:\deepseek），PYTHONPATH 会被截断，
 # 所以不使用 export PYTHONPATH，而是逐个进入子项目（各自的 pyproject 已配 pythonpath=["."]）。
 
-PROJECTS := geo-radar filing-lens audit-loop cruxline agent-inbox agent-store
+PROJECTS := geo-radar filing-lens audit-loop cruxline agent-inbox agent-store console
 
 .PHONY: test demo clean
 
