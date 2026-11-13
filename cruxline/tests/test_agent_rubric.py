@@ -18,10 +18,16 @@ def trace(calls, output="done", **meta):
     return Trace(case_id="c", input="q", output=output, tool_calls=calls, meta=meta)
 
 
-def test_weights_sum_to_one_and_only_completion_is_fatal():
+def test_weights_sum_to_one_and_two_fatal_criteria():
+    """两个致命项：回合没走完、报错后不补救还照常给结论。
+
+    2026-11-12 审查前这里只有 turn_completed 一条 fatal，六条规则没有一条读
+    ToolCall.ok/error —— 「pytest 红了 → 结尾写全部通过」拿 1.0 PASS。
+    这里改成断两条，是判定契约的变更，不是为了让测试变绿。
+    """
     rubric = agent_rubric()
     assert abs(sum(c.weight for c in rubric) - 1.0) < 1e-9
-    assert [c.name for c in rubric if c.fatal] == ["turn_completed"]
+    assert [c.name for c in rubric if c.fatal] == ["turn_completed", "error_recovered"]
 
 
 def test_identical_retries_are_flagged():

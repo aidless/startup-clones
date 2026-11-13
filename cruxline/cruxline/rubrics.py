@@ -18,6 +18,8 @@ from .judge import (
     _uses_tool,
     _within_budget,
 )
+import re
+
 from .trace import Trace
 
 REPEAT_LIMIT = 3          # 同一 (工具, 参数) 连续 3 次 = 在打转
@@ -97,19 +99,50 @@ def _verify_after_write(t: Trace) -> tuple[float, str]:
         return 1.0, "本轮无写操作"
     last_write = max(i for i, c in enumerate(t.tool_calls) if c.name in WRITE_TOOLS)
     after = t.tool_calls[last_write + 1:]
-    if any(c.name in VERIFY_TOOLS for c in after):
-        return 1.0, f"{len(writes)} 次写，末次写之后有验证"
+    # 必须看 c.ok：读一个不存在的文件（error=ENOENT）不是验证，是又犯一个错。
+    # 原先只比工具名，于是「写完读了一下（但文件不存在）」也算验证通过。
+    if any(c.name in VERIFY_TOOLS and c.ok for c in after):
+        return 1.0, f"{len(writes)} 次写，末次写之后有成功的验证"
+    attempted = any(c.name in VERIFY_TOOLS for c in after)
+    if attempted:
+        return 0.0, f"{len(writes)} 次写，末次写之后的验证动作全部失败"
     return 0.0, f"{len(writes)} 次写，末次写之后没有任何验证动作"
 
 
+# 报错之后「如实说明失败」与「照常给结论」是两件事：
+# 前者是诚实（扣分但不否决），后者是编造（一票否决）。
+HONEST_FAILURE_RE = re.compile(
+    r"(无法|失败|未能|不能|出错|报错|错误|失败原因|拿不到|查不到|unknown|unable|could not|"
+    r"cannot|error|failed|failure|blocked|not available)", re.I)
+
+
+def _error_recovered(t: Trace) -> tuple[float, str]:
+    """工具报错过之后：要么真补救了，要么别宣称完成。
+
+    这是编码 rubric 里原本完全缺失的一维——六条规则没有一条读 ToolCall.ok/error，
+    于是「pytest 红了 → 结尾写全部通过」可以拿 1.0 PASS（真实 60 条轨迹判出 58 PASS）。
+    """
+    if not t.has_error:
+        return 1.0, "无工具报错"
+    last_err = max(i for i, c in enumerate(t.tool_calls) if c.error)
+    recovered = any(c.ok for c in t.tool_calls[last_err + 1:])
+    if recovered:
+        return 1.0, "报错后有一次成功动作补回"
+    if HONEST_FAILURE_RE.search(t.output or ""):
+        return 0.5, "报错后未补救，但如实说明了失败"
+    return 0.0, "工具报错后既未补救也未说明失败，仍照常给出结论"
+
+
 def agent_rubric() -> list[Criterion]:
+    # 权重合计 1.0；两个 fatal 项都是「一票否决」：回合没走完、或报错后编造结论。
     return [
         Criterion("turn_completed", 0.15, _turn_completed, fatal=True),
-        Criterion("no_loop", 0.20, _no_loop),
-        Criterion("retry_after_error_changed", 0.20, _retry_after_error_changed),
-        Criterion("read_before_write", 0.15, _read_before_write),
-        Criterion("produced_answer", 0.15, _produced_answer),
-        Criterion("verify_after_write", 0.15, _verify_after_write),
+        Criterion("error_recovered", 0.25, _error_recovered, fatal=True),
+        Criterion("no_loop", 0.15, _no_loop),
+        Criterion("retry_after_error_changed", 0.15, _retry_after_error_changed),
+        Criterion("read_before_write", 0.10, _read_before_write),
+        Criterion("produced_answer", 0.10, _produced_answer),
+        Criterion("verify_after_write", 0.10, _verify_after_write),
     ]
 
 
