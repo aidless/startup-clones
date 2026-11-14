@@ -16,6 +16,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 import re
 import time
 import zlib
@@ -27,6 +28,8 @@ UA = "filing-lens-research/0.1 (contact: research@example.com)"
 ALLOWED_HOSTS = {"www.sec.gov", "sec.gov", "data.sec.gov"}
 MAX_BYTES = 40 * 1024 * 1024
 DEFAULT_DATA = Path(__file__).resolve().parent.parent / "data"
+
+logger = logging.getLogger(__name__)
 
 
 # 落盘名的唯一合法形状：单段、字母数字开头、无路径分隔符、无 glob 元字符。
@@ -164,7 +167,14 @@ def from_cik(cik: str, data_dir: str | Path = DEFAULT_DATA, pause: float = 1.2) 
     facts_payload = None
     try:
         facts_payload = json.loads(download(info["facts_url"]))
-    except Exception:          # noqa: BLE001 —— 没有 XBRL 也要能用文本路径
+    except (OSError, ValueError) as exc:
+        # 没有 XBRL 也要能用文本路径，所以这里不中断抓取。但必须说清楚「退化成了什么」：
+        # 之前这里是一句裸 except，下载失败、JSON 损坏、超限全都静默，调用方拿到
+        # 一份 has_xbrl=false 的结果却不知道为什么，只能去猜。
+        # OSError = 网络/URL 错误（URLError/HTTPError/超时），ValueError = JSON 解析失败
+        # 或 IngestError（大小超限、gzip 解压失败）。
+        logger.warning("XBRL 事实没拿到（CIK %s）：%s；本次只建文本索引，数字类问题会答 no_data。",
+                       info["cik"], exc)
         facts_payload = None
     out = _write(html, facts_payload, info["cik"], info["period"], data_dir)
     out.update({"company": info["company"], "filed": info["filed"], "cik": info["cik"]})

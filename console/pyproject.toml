@@ -1,0 +1,10 @@
+[project]
+name = "console"
+version = "0.1.0"
+description = "六个工具的统一演示台（FastAPI + 单页）"
+requires-python = ">=3.11"
+dependencies = ["fastapi", "uvicorn"]
+
+[tool.pytest.ini_options]
+pythonpath = ["..", "."]
+testpaths = ["tests"]

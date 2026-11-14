@@ -77,11 +77,14 @@ cli.py       demo
 - [ ] 退款/争议流程（`usage` 表需要 `reversed_by` 与不可变审计链）
 - [ ] 商店侧审核状态机（draft → in_review → published → yanked）
 
-## 已知局限
+## 已知边界
 
-- 价格是整数美分，做不了「$0.000003/token」这种粒度；真实应按 micro-cent 存整数。
-- 没有做「按调用方分层的价格表」，同一 agent 对大客户打折需要新增 pricing tier。
-- 平台抽成比例是账单参数，不是合同；真实系统需要开发者协议版本化并在账单上标注协议版本。
+- **金额用整数分，但账单只覆盖记进 `usage` 表的事件**：`Pricing.cents_per_unit` 与 `usage.cents` 都是整数（`manifest.py:32`、`meter.py:19`），展示时才用 `Decimal` 转美元（`meter.py:28`）。被权限闸拦下、handler 抛错、以及同 `(buyer, request_id)` 的重投都不会写 usage（`runtime.py:71`、`runtime.py:81`、`runtime.py:55`），所以账单里没有这些调用；反过来，绕过 `Runtime` 直接调 `Ledger.record` 的用量不受任何前置校验约束。整数分也做不了「$0.000003/token」这种粒度，真实系统应按 micro-cent 存整数。
+- **版本归属以首次发布为准，不能转移**：`publish` 用 `INSERT OR IGNORE` 写入 `agents.developer`（`registry.py:77`），此后的发布者必须与首发布者一致（`registry.py:73`），没有转让或迁移归属的 API；`yank` 只改状态、不删版本（`registry.py:86`），买家已有安装仍保留记录。
+- **分成先按总额取整、再逐行分配、末行兜底**：`statement` 先算 `target_fee`（`meter.py:130`），中间行各自取整并被夹在剩余额度内，最后一行拿走全部余额（`meter.py:132`），保证 `sum(platform) + sum(developer) == gross`。代价是每行金额依赖行顺序，不能对单行独立复算；抽成比例是账单参数（`statement(..., fee_pct=20)`）而不是合同。
+- **registry 是单文件 SQLite，没有并发写保护**：`Registry` 直接 `sqlite3.connect(db_path)`（`registry.py:55`），默认 `:memory:`，未开 WAL、未设 `busy_timeout`、也没有进程内锁或重试；多进程/多线程同时 `publish`/`install` 会撞上 `database is locked` 或丢写。
+- **没有真实支付网络对接**：整个包没有任何网络请求或支付 SDK 调用。`payment.charge` 只是 `KNOWN_PERMISSIONS` 里的一个权限字符串（`manifest.py:19`），账单是本地 `usage` 表的聚合与 Markdown 渲染（`meter.py:119`），扣款、退款、对账、发票都留给外部系统。
+- **digest 是内容哈希，不是签名**：`digest()` 只做 `sha256(canonical)`（`manifest.py:75`），能查出「同版本内容改了」，但证明不了「这份清单是开发者发的」；签名、执行隔离仍在路线图（`handler` 目前是进程内回调，`runtime.py:80`）。
 
 MIT License.
 

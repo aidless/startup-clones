@@ -2,11 +2,11 @@
 
 六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**308 个测试，0 个 mock 掉的断言，全部离线可跑。**
+**318 个测试，0 个 mock 掉的断言，全部离线可跑。**
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 七个子项目逐个跑，共 308 passed
+make test      # 七个子项目逐个跑，共 318 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 ```
 
@@ -15,7 +15,7 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 | 目录 | 对标（融资事实） | 一句话内核 | 测试 |
 | --- | --- | --- | --- |
 | [`geo-radar/`](geo-radar) | The Prompting Company · 2026-11-03 $6.5M 种子 | 测「AI 推荐里有没有你」：提示词生成 → 多模型跑 → 提及抽取 → 站位报告 | 27 |
-| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 93 |
+| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 103 |
 | [`audit-loop/`](audit-loop) | Clark · 2026-11-02 $11M 种子（Touring Capital） | 给事务所的审计程序内核：银行调节/账龄/截止测试 → 例外清单 + 可归档 Excel 底稿 | 36 |
 | [`cruxline/`](cruxline) | Crux Labs · 2026-10-30 $6M+ 种子 | 把「专家觉得这算做好了」变成 rubric + kappa 校准 + 版本回归门禁，**致命项一票否决** | 52 |
 | [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 47 |
@@ -31,7 +31,7 @@ make demo      # 六个 demo 各跑一遍（无需任何 API key）
 | filing-lens | Apple / Microsoft FY2026 10-K + XBRL（`scripts/fetch_edgar.py`） | 8/8 真实问答回归；6 个真实缺陷已修 |
 | audit-loop | 同上 XBRL 的 8–9 年财务序列（`scripts/real_analytics.py`） | Apple 报 2 条例外、Microsoft 零例外 |
 | agent-inbox | SEC CORRESP 往来函件（`scripts/fetch_sec_corresp.py`） | 3 封真实函件、1 线程、2 条缺口如实报出 |
-| cruxline | 60 条真实 dsh 会话轨迹（`scripts/export_dsh_traces.py`） | 58/60 通过；2 条失败是真缺陷 |
+| cruxline | 60 条真实 dsh 会话轨迹（`scripts/export_dsh_traces.py`） | 59/60 通过；1 条被否决是真缺陷（磁盘满却宣称已推） |
 | agent-store | 16 个真实 MCP server 清单（`scripts/fetch_mcp_servers.py`） | 16/16 无权限声明；2 个假阳性已修 |
 | geo-radar | 本机 3 小模型 + Magpie 3 强模型 × 8 问（`scripts/real_geo.py`） | 小模型把 Expensify 排第一、强模型一致排 Ramp；跨档位混算等于造假 |
 
@@ -90,7 +90,7 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-12）
 
-- 测试：**308 passed**（geo 27 / filing 93 / audit 36 / crux 52 / inbox 47 / store 42 / console 11）
+- 测试：**318 passed**（geo 27 / filing 103 / audit 36 / crux 52 / inbox 47 / store 42 / console 11）
 - 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
   已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——
   测试写的是「设计时以为会发生什么」，复现测试写的是「真实输入会发生什么」

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
 from .fixtures import CFO, INVOICE_BOT, RESEARCH
@@ -23,7 +24,7 @@ def _handler(name: str):
     return run
 
 
-def main(argv: list[str] | None = None) -> int:
+def cmd_demo(_args: argparse.Namespace) -> int:
     reg = Registry()
     ledger = Ledger()
     for m, dev in ((INVOICE_BOT, "northwind-labs"), (RESEARCH, "quill-research"), (CFO, "ledgerly")):
@@ -65,6 +66,22 @@ def main(argv: list[str] | None = None) -> int:
     except RegistryError as exc:
         print(f"  已拒绝：{exc}")
     return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="agentstore",
+        description="agent 应用商店内核：上架 → 安装 → 调用 → 账单的零配置演示")
+    sub = ap.add_subparsers(dest="cmd", title="子命令")
+    d = sub.add_parser("demo", help="跑完整演示（缺省子命令）：3 个 agent 上架 → 6 次调用 → 出账单")
+    d.set_defaults(func=cmd_demo)
+    ap.set_defaults(func=cmd_demo)     # 不带子命令时保持旧行为：直接跑 demo
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
 
 
 if __name__ == "__main__":

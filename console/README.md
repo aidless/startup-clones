@@ -3,9 +3,24 @@
 一个 FastAPI 进程 + 一个页面，把六个项目各自的链路原样暴露出来。**没有为演示另写逻辑**：
 每个面板调的都是库里已经在跑的函数。
 
+## 快速开始
+
 ```bash
-python3 app.py --port 8800     # → http://127.0.0.1:8800
+cd console
+python3 app.py --port 8800        # 打开 http://127.0.0.1:8800
+python3 -m pytest -q              # 11 passed（含跨线程竞态回归：filing 面板连打 5 次）
 ```
+
+命令行验活（不用浏览器也能确认六个面板都活着）：
+
+```bash
+for p in projects geo filing audit crux inbox store; do
+  printf '%-8s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' "http://127.0.0.1:8800/api/$p"
+done
+```
+
+依赖只有 `fastapi` 与 `uvicorn`（`pyproject.toml` 里声明）；六个子项目通过相对路径导入，
+所以必须从 `console/` 目录启动，并且同级目录里要有那六个项目。
 
 ## 六个面板
 

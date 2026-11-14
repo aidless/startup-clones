@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -34,6 +35,8 @@ INGEST_TOKEN = os.environ.get("FILINGLENS_INGEST_TOKEN", "")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="filing-lens", docs_url="/api/docs")
+
+logger = logging.getLogger(__name__)
 
 
 _CACHE: dict[str, Filing] = {}
@@ -132,14 +135,19 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     args = ap.parse_args()
 
+    # 启动横幅走 logging 而不是 print：这层日志以后要和 uvicorn 的日志一起被重定向/过滤，
+    # 混一条裸 print 到 stdout 会绕开任何一层 handler。format 只留消息，保持原来的阅读效果。
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     available = scan()
     if not available:
-        print(f"{DATA_DIR} 里没有 10-K 文件。先跑：python3 scripts/fetch_edgar.py")
+        logger.error("%s 里没有 10-K 文件。先跑：python3 scripts/fetch_edgar.py", DATA_DIR)
         return 1
-    print(f"数据目录 {DATA_DIR}，可用文件 {len(available)} 份")
+    logger.info("数据目录 %s，可用文件 %d 份", DATA_DIR, len(available))
     for f in available:
-        print(f"  CIK {f['cik']}  期间 {f['period']}  XBRL {'有' if f['has_xbrl'] else '无'}")
-    print(f"\n打开 http://{args.host}:{args.port}")
+        logger.info("  CIK %s  期间 %s  XBRL %s", f["cik"], f["period"],
+                    "有" if f["has_xbrl"] else "无")
+    logger.info("\n打开 http://%s:%d", args.host, args.port)
 
     import uvicorn
 

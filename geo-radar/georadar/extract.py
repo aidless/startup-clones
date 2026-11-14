@@ -51,18 +51,22 @@ def sentiment_of(text: str) -> float:
 
 
 def find_mentions(answer: Answer, brands: list[str]) -> list[Mention]:
-    """返回按出现位置排序的提及列表；position 从 1 开始。"""
-    hits: list[tuple[int, str]] = []
+    """返回按出现位置排序的提及列表；position 从 1 开始。
+
+    口径：**一次回答里每个品牌只记一条**（问题是「这次回答提到了它没有」），
+    取它最早那次「没被别人盖住」的出现位置。
+    """
+    # 每个品牌都要扫**全部**出现位置，不能只 search 第一次：
+    # "Bill.com is fine. Bill Gates also uses it." 里 Bill 的首次出现被 Bill.com
+    # 完全包住，去重时会被丢掉，而它后面还独立出现过 —— 只取首次就等于整条丢失，
+    # 那个品牌在这次回答里被判「未提及」。
+    spans: list[tuple[int, int, str]] = []
     for brand in brands:
-        m = _brand_regex(brand).search(answer.text)
-        if m:
-            hits.append((m.start(), brand))
+        for m in _brand_regex(brand).finditer(answer.text):
+            spans.append((m.start(), m.end(), brand))
     # 互为前缀的品牌（Bill 与 Bill.com）会在同一处各命中一次，占掉两个位次，
     # 把「第二个品牌」的位置虚推一位 —— 位次是报表的核心指标，不能这么飘。
     # 规则：同一处只留最长的那个；跨处重叠（一个 span 被另一个完全包住）也只留长的。
-    spans: list[tuple[int, int, str]] = []
-    for offset, brand in hits:
-        spans.append((offset, offset + len(brand), brand))
     spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
     kept: list[tuple[int, int, str]] = []
     for start, end, brand in spans:
@@ -70,7 +74,12 @@ def find_mentions(answer: Answer, brands: list[str]) -> list[Mention]:
             continue
         kept = [k for k in kept if not (k[0] >= start and k[1] <= end)]
         kept.append((start, end, brand))
-    hits = sorted((start, brand) for start, _end, brand in kept)
+    # 每个品牌留最早的那一次存活出现
+    first: dict[str, tuple[int, int]] = {}
+    for start, end, brand in kept:
+        if brand not in first or start < first[brand][0]:
+            first[brand] = (start, end)
+    hits = sorted((start, brand) for brand, (start, _end) in first.items())
 
     out: list[Mention] = []
     for rank, (offset, brand) in enumerate(hits, start=1):
@@ -85,6 +94,7 @@ def find_mentions(answer: Answer, brands: list[str]) -> list[Mention]:
                 char_offset=offset,
                 sentiment=sentiment_of(ctx),
                 context=ctx,
+                run_index=answer.run_index,
             )
         )
     return out

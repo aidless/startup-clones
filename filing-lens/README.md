@@ -7,6 +7,8 @@
 
 ## 20 家真实公司的基准（`bench/report.md`）
 
+> 口径说明：`data/` 里现在有 **22 家**，其中 `0000909832`、`0002078730` 是后来为「复核差异表」演示补进来的小盘样本，**没有纳入这份 20 家基准**（重跑基准见`scripts/batch_bench.py --no-fetch`）。
+
 ```bash
 python3 scripts/batch_bench.py            # 缺的文件自动下载，约 3–5 分钟
 python3 scripts/batch_bench.py --no-fetch # 只用 data/ 里已有的
@@ -54,7 +56,7 @@ curl -X POST localhost:8765/api/ingest -H 'Content-Type: application/json' \
 投研问答的失败模式，90% 不是「模型不够聪明」，而是这三件：
 
 1. **数字从文本里捞**。文本里的数字是被人抄过的，任何人都可能在括注里写错。所以数字类问题**只走 XBRL 结构化事实**，文本通道一律不许出数字。
-2. **答非所问**。检索到了相关段落就往上套，用户问 A 你答 B。所以用查询词覆盖率做闸门，覆盖率低于 0.34 直接拒答。
+2. **答非所问**。检索到了相关段落就往上套，用户问 A 你答 B。所以用查询词覆盖率做闸门，覆盖率低于 0.45（`answer.py:18 MIN_COVERAGE`）直接拒答。
 3. **无法自证**。给个答案没有页码/段落，用户无法验证，也就无法信任。所以每个 `Chunk` 带 `Item + 段落序号` 的 `ref`，答案必须挂引用。
 
 ## 契约（写进测试，不是写进 README 就算）
@@ -157,11 +159,39 @@ Q: what is the cryptocurrency mining plan in Argentina
 - [ ] 多文件会话（10-K + 10-Q + earnings call）
 - [ ] 向量召回层 + 混合排序（保持词法为主）
 
-## 已知局限
+## 已知边界
 
-- BM25 不理解同义词（`revenue` vs `net sales`），需要查询扩展词表。
-- 表格只抽成二维数组，还没做「行列语义识别」（哪列是年份、哪行是指标）。
-- 拒答阈值 0.34 是经验值，不同长度的问题需要按 token 数归一。
+这一节写的都是**实测撞到的边界**，每条都能在代码或 `data/` 里查到，不是免责声明。
+
+- **中文问句靠一张 66 条的词表桥接，词表外的新说法直接拒答**。英文问句直接进 BM25 词法检索；
+  中文问句先由 `glossary.py:11-80` 把词条扩成英文词组（供应链 → `supply chain suppliers manufacturing`），
+  再检索。词表里没有的说法（实测：`分拆上市计划`、`中试线建设进度`、`股东回报框架`）在英文语料里
+  零命中，返回 `insufficient_evidence`——是拒答，不是「沾边就答」。**中英混合也会被这条挡住**：
+  只要问句里有中文、而词表概念一个都没命中，即使英文部分本来检索得到也直接拒答
+  （`answer.py:325`；实测 `capital expenditure 是多少` 拒答）。
+- **员工数是「正文句式」问题，不是数据问题**。人数只从 `数字 + employees/people/associates/...`
+  的句子里读（`answer.py:99-102` 的 `HEADCOUNT_RE`，`answer.py:268-305` 全文扫句）。
+  所以 `bench/report.md` 里 20 家有 2 家（Intel、Qualcomm）明确拒答——它们的 10-K 里没有这种陈述。
+  **表格里的人数读不到**：`html_to_text` 把每个单元格拆成独立行（`edgar.py:69-71`），
+  「科目名 / 人数」不再构成「数字在前」的句式；而表格通道只抽成二维数组
+  （`edgar.py:175`）、答案器只拿到 `chunks`（`corpus.py:35`），不参与人数回答。
+- **现金流量科目是一张枚举别名表，不是语义匹配**。`facts.py:38-44` 逐条列了
+  `cash flow from operations` / `operating cash flow` / `cash provided by operating activities` /
+  `经营现金流` 等写法。表外说法认不出指标（`facts.py:103-112`），实测 `capital expenditure 是多少`
+  返回 `resolve_metric → None`；更短的别名还会抢先命中，实测 `现金流是多少` 命中的是 `现金`
+  （现金余额 FY2026 36.30B），不是经营现金流（145.10B）。
+- **每家公司只有 `data/` 里那一份 10-K，做不了跨年度 / 跨申报对比**。`data/` 是 22 个
+  `.htm`，一个 CIK 一份；`corpus.load` 只取 glob 命中的最后一份（`corpus.py:74-78`），
+  所以「去年那份 10-K 怎么说」没有第二份正文可查。XBRL 侧虽然带多财年序列，但同一 fy
+  只保留「最近申报 + 最新期末」一行（`facts.py:115-139`），这是同一份申报历史，不是逐年原文对比。
+  跨文件会话 / 跨公司对比都还在路线图里。
+- **没有查询改写层，问法差异会改变结果**。检索只有 BM25 词法打分（`index.py:60-86`）加词表扩写，
+  不做同义改写，也不判断「这两种问法是不是一个问题」。实测同一份 Apple 10-K：
+  `营收是多少` 走 XBRL 答 478.83B（`metric`），`营收增长情况` 却落到文本通道，
+  摘了一句「net sales 按产品拆分」的段落（`answer.py:36-42` 的 `is_numeric_question` 只看线索词）；
+  `supply chain risk` 与 `供应链风险` 给出的段落也不同。想稳，就用 10-K 里的原词问。
+- **表格只到二维数组，没有行列语义**。`extract_tables` 给的是行列字符串（`edgar.py:175`），
+  分不出哪列是年份、哪行是指标，所以表格类问题必须走 XBRL，表格本身不参与数字回答。
 
 MIT License.
 

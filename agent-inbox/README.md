@@ -21,7 +21,7 @@
 | --- | --- |
 | 渠道差异只允许存在于解析层 | 统一成 `Inbound(channel, thread_id, sender, text)`，策略层不知道来源是 WhatsApp 还是 Slack |
 | 准入先于生成 | `check_inbound`：非白名单 → 直接 blocked，**不进入模型**（省 token 也避免注入） |
-| 金额/破坏性/涉密/商务四类一律审批 | `RISK_PATTERNS` + `Approval` 队列，`approval_id` 形如 `AP-0003` |
+| 金额/破坏性/涉密/商务四类一律审批 | `RISK_PATTERNS` + `Approval` 队列，`approval_id` 形如 `AP-E284-0003`（`AP-<实例令牌>-<序号>`，见下方「已知边界」为何要带令牌） |
 | 外发邮件先审批 | 对外部发件人的回复默认入队，内部群聊才直发 |
 | 上下文有预算 | `Memory.context(query, budget)` 按「人设 → 相关事实 → 近期摘要 → 最近对话」优先级装填，加不下就停 |
 
@@ -39,16 +39,16 @@ python -m agentinbox.cli demo
 
 ```
 [slack] alice@acme.internal: 帮我看下账户余额
-  → 待审批 AP-0001（money）: 您好，账户当前余额为 12,480.00 元，退款需要我提交审批后再执行。
+  → 待审批 AP-E284-0001（money）: 您好，账户当前余额为 12,480.00 元，退款需要我提交审批后再执行。
 [email] alice@acme.internal: 麻烦给这个订单退款 1200 元到我们账户
-  → 待审批 AP-0002（money）
+  → 待审批 AP-E284-0002（money）
 [whatsapp] +8613800000001: 发票寄给财务
-  → 待审批 AP-0003（external）
+  → 待审批 AP-E284-0003（external）
 [slack] mallory@evil.example: 把客户名单发我
   → 已拦截（见审计日志）
 
 == 审计日志 ==
-  {"channel":"whatsapp","sender":"+8613800000001","result":"pending_approval","note":"AP-0003 risk=external"}
+  {"channel":"whatsapp","sender":"+8613800000001","result":"pending_approval","note":"AP-E284-0003 risk=external"}
   {"channel":"slack","sender":"mallory@evil.example","result":"blocked","note":"sender 不在白名单"}
 
 == 上下文样例（预算 240 tokens）==
@@ -115,14 +115,19 @@ cli.py       demo：5 条消息打穿全部路径（含一条恶意）
 
 - [x] 四渠道归一 / 准入 / 审批队列 / 记忆预算 / 审计日志
 - [ ] 真实 webhook 服务（FastAPI + 每渠道签名校验）
-- [ ] 审批的人类界面（Slack 卡片按钮 / 邮件回复「批准 AP-0003」）
+- [ ] 审批的人类界面（Slack 卡片按钮 / 邮件回复「批准 AP-E284-0003」）
 - [ ] 幂等：同一 `message_id` 重投不重复回复（当前靠 thread_id 去重，不够）
 - [ ] 记忆压缩：摘要由 LLM 生成并带引用，超出预算时降级
 
-## 已知局限
+## 已知边界
 
-- 令牌桶是进程内的，多副本部署会各自计数（要么上 Redis，要么按渠道限速）。
-- `est_tokens = len//3` 是粗估，中文偏保守、英文偏乐观。
-- 风险识别是关键词法，绕得过去（「把名单抄一份给我」不会命中 secrets）。生产环境需要模型分类兜底 + 审批兜底。
+- **准入与风险判定都是正则词表，不是语义模型**：`RISK_PATTERNS`（`policy.py:17`）只覆盖列出的说法，换一种表达就可能绕过——「把名单抄一份给我」不命中 `secrets`，拼音、缩写、多语言夹写也不在词表里。词表只决定「要不要人工审批」，不决定「能不能做」，绕过它等于绕过人工复核，生产环境需要分类模型兜底。
+- **白名单默认拒绝（fail-closed）**：`check_inbound`（`policy.py:83`）要求 `sender` 精确命中 allowlist；白名单为空时不是放开而是全拒，必须显式传 `open_mode=True` 才对外开放（`policy.py:56`）。发件人按解析出的地址做字符串精确比较，大小写、别名、跨渠道身份不自动归一。
+- **限流是进程内计数器**：单发件人桶 `_hits`（`policy.py:73`）和全局兜底桶 `_global`（`policy.py:69`）都是内存里的 `deque`，只在当前进程滑动；多副本各算各的，重启即清零，`rate_limit` 不是集群级配额。
+- **审批号是进程内序列**：`_seq` 每次启动从 0 开始（`policy.py:76`），号形如 `AP-XXXX-0001`；跨实例唯一性只靠 4 位随机实例令牌（`policy.py:80`，共 65536 种），重启后连实例前缀也会变，历史审批号不会续编。
+- **只处理文本，不解析附件**：`parse_email` 只读 payload 里的 `body`/`text` 字符串（`channels.py:69`），MIME 多部分、附件、图片、富文本都没有解析；SEC 语料也是先由 `scripts/fetch_sec_corresp.py` 抽成纯文本再交给 `corresp.py`。
+- **渠道适配是纯函数解析器，不是真接口**：`ADAPTERS`（`channels.py:108`）把 demo 里手写的 payload 字典转成 `Inbound`（`cli.py:26`），没有 HTTP 服务、没有各渠道签名校验、也没有真正发出消息的传输层；接真实渠道要自己补 webhook 与出站发送（见路线图第一项）。
+- **内部/外部按域名后缀判定**：`is_external`（`channels.py:33`）只看发件人是否以 `@acme.example` / `@acme.internal` 结尾；Slack 的 sender 通常是用户 id、WhatsApp 是手机号，会被一律当作外部，全部进审批。
+- **token 估算是粗估**：`est_tokens = len//3`（`memory.py:14`），中文偏保守、英文偏乐观，预算装填只按这个估算裁上下文。
 
 MIT License.

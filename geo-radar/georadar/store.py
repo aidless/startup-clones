@@ -40,8 +40,12 @@ CREATE TABLE IF NOT EXISTS mentions (
     char_offset INTEGER NOT NULL,
     sentiment REAL NOT NULL,
     context TEXT NOT NULL,
-    -- 同一 run 重存（导出脚本重跑 / 断点续跑）不能把 mention 翻倍：2 条变 4 条
-    PRIMARY KEY (run_id, prompt_id, brand)
+    run_index INTEGER NOT NULL DEFAULT 0,
+    -- 主键必须带 run_index：同一 prompt 的 repeat 次采样是各自独立的观测，
+    -- 只按 (run_id, prompt_id, brand) 去重会把 72 条压成 32 条，
+    -- `report --run-id` 的份额/位次与 `run` 当时打印的就对不上（实测 34.72% → 34.38%）。
+    -- 仍然保留幂等：同一 run 重存（重跑导出/断点续跑）不会把 mention 翻倍。
+    PRIMARY KEY (run_id, prompt_id, run_index, brand)
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_run ON mentions(run_id);
 """
@@ -68,9 +72,10 @@ def save_run(conn: sqlite3.Connection, run: Run, mentions: list[Mention]) -> Non
         )
     for m in mentions:
         conn.execute(
-            "INSERT OR REPLACE INTO mentions(run_id,prompt_id,brand,position,char_offset,sentiment,context) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (run.run_id, m.prompt_id, m.brand, m.position, m.char_offset, m.sentiment, m.context),
+            "INSERT OR REPLACE INTO mentions(run_id,prompt_id,run_index,brand,position,char_offset,sentiment,context) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (run.run_id, m.prompt_id, m.run_index, m.brand, m.position, m.char_offset,
+             m.sentiment, m.context),
         )
     conn.commit()
 
@@ -90,7 +95,8 @@ def load_run(conn: sqlite3.Connection, run_id: str) -> tuple[Run, list[Mention]]
             citations=[Citation(**c) for c in json.loads(r["citations"])], run_index=r["run_index"],
         ))
     mentions = [Mention(**dict(r)) for r in conn.execute(
-        "SELECT prompt_id,brand,position,char_offset,sentiment,context FROM mentions WHERE run_id=?", (run_id,))]
+        "SELECT prompt_id,run_index,brand,position,char_offset,sentiment,context "
+        "FROM mentions WHERE run_id=? ORDER BY prompt_id,run_index,position", (run_id,))]
     return run, mentions
 
 

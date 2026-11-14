@@ -47,7 +47,11 @@ def reconcile_bank(entries: list[Entry], lines: list[BankLine], window_days: int
     """
     res = ReconResult()
     used: set[int] = set()
-    cash = [e for e in entries if any(a in e.account for a in accounts)]
+    # 科目名大小写不敏感：底稿里几乎都写 "Bank Account USD" / "CASH-1000"，
+    # 而 CASH_ACCOUNTS 里是小写 cash/bank —— 区分大小写时一整批现金科目一个都不匹配，
+    # 还全部落到「银行已记、企业未记」一侧，看起来像"漏记了所有银行流水"。
+    accounts_cf = tuple(a.casefold() for a in accounts)
+    cash = [e for e in entries if any(a in e.account.casefold() for a in accounts_cf)]
     for e in sorted(cash, key=lambda x: x.date):
         best: tuple[int, int] | None = None
         for i, b in enumerate(lines):

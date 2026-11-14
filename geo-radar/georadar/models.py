@@ -42,6 +42,7 @@ class Mention:
     char_offset: int
     sentiment: float     # -1 .. 1
     context: str = ""
+    run_index: int = 0   # 同一条 prompt 的第几次采样（repeat>1 时必须区分）
 
     def as_dict(self) -> dict:
         return asdict(self)
