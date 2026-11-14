@@ -44,6 +44,18 @@ def cmd_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def _answer_payload(question: str, ans) -> dict:
+    """一条回答的结构化形状：与人读版本同源（都在 `Response` 上取字段）。"""
+    return {
+        "question": question,
+        "kind": ans.kind,
+        "status": ans.status,
+        "text": ans.text,
+        "confidence": round(ans.confidence, 4),
+        "citations": [{"kind": c.kind, "ref": c.ref, "quote": c.quote} for c in ans.citations],
+    }
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
     html = Path(args.html).read_text(encoding="utf-8") if args.html else fixtures.FAKE_10K_HTML
     payload = None
@@ -53,6 +65,12 @@ def cmd_ask(args: argparse.Namespace) -> int:
         payload = fixtures.FAKE_FACTS
     sections, chunks, tables, conn = _build(html, payload, args.db)
     ans = Answerer(chunks, conn)
+    if args.json:
+        # 单个问题就吐单个对象（调用方不用先拆列表）；多个问题才包一层 answers
+        payloads = [_answer_payload(q, ans.ask(q)) for q in args.questions]
+        out = payloads[0] if len(payloads) == 1 else {"answers": payloads}
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
     for q in args.questions:
         print(f"\nQ: {q}")
         print(ans.ask(q).render())
@@ -111,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--facts", default="")
     a.add_argument("--with-fixture-facts", action="store_true")
     a.add_argument("--db", default=":memory:")
+    a.add_argument("--json", action="store_true", help="输出 JSON（单问一条，多问包 answers）")
     a.set_defaults(func=cmd_ask)
 
     m = sub.add_parser("metric", help="取年度指标序列与同比")

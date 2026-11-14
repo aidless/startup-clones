@@ -32,7 +32,9 @@ python -m cruxline.cli demo        # 8 条轨迹 + 专家标注 + 校准 + 回�
 
 ```bash
 # 1) 从生产打点导出轨迹
-python -m cruxline.cli judge --traces traces.json --threshold 0.75
+python -m cruxline.cli judge --traces data/traces.jsonl --threshold 0.75 --json
+# --rubric 默认 agent（产品自身那套，两个 fatal 项）；--rubric default 是 judge.py 的通用五条
+# 实测仓库 60 条真实轨迹：agent 59/60 通过，default 34/60 —— 两套 rubric 不能混用
 # 2) 专家标注 30 条，先过一致性门槛（不达标不许上线当门禁）
 python -m cruxline.cli calibrate --traces traces.json --labels expert.json --min-kappa 0.6
 # 3) 每次发版比一次

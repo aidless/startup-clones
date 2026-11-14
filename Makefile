@@ -3,13 +3,21 @@
 
 PROJECTS := geo-radar filing-lens audit-loop cruxline agent-inbox agent-store console
 
-.PHONY: test demo clean
+.PHONY: test demo clean matrix e2e
 
 test:
 	@for p in $(PROJECTS); do \
 		echo "== $$p"; \
 		( cd $$p && python3 -m pytest -q ) || exit 1; \
 	done
+
+# 全语料解析矩阵（22 份 10-K，约 2 分钟）：改解析器后跑一次，看有没有文件读不通
+matrix:
+	python3 scripts/corpus_matrix.py --baseline docs/corpus-matrix.json
+
+# 七个项目端到端串联（真跑子进程，约 40 秒）
+e2e:
+	python3 scripts/e2e.py
 
 console:
 	cd console && python3 app.py --port 8800

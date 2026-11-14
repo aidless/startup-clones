@@ -94,9 +94,25 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
 第二条教训：**e2e 的第一个失败是我自己断言写错**（品牌行带「←」标记、那一列是每品牌提及数不是合计）。
 串联脚本的断言错了会把「链好着」报成「链断了」，所以断言必须拿真输出对一遍再固化。
 
-## 还没打磨到的（第二轮之后的诚实清单）
+## 第三轮：结构化输出 + 全语料矩阵
 
-- 没有统一的 `--json` 输出开关：现在只有 `audit-loop analytics --json` 一处，其余仍打人类可读文本。
+| 事项 | 做法 | 判据 |
+|---|---|---|
+| `--json` 输出（原「风格不统一」的最后一条） | 四个**查询型**子命令加 `--json`：`filinglens ask`、`georadar run/report`、`cruxline judge`、`auditloop run`（`analytics --json` 早已有） | `tests/test_json_output.py` 六例：stdout **整体**是 JSON 对象；关键字段齐；能用 JSON 字段重建人读版本里的同一个数 |
+| 全语料解析矩阵 | `scripts/corpus_matrix.py`（`--only` / `--json` / `--baseline`），基线存 `docs/corpus-matrix.json`；`make matrix` 逐份比对漂移 | `tests/test_corpus_matrix.py` 四例：22 份全解析、全带 XBRL、Apple 结构正常、退化形态**只有 Intel 一份** |
+| `agent-inbox` / `agent-store` | 仍不加 `--json` | 它们只有 `demo`，没有可查询的命令；给演示稿套接口形状不算打磨，等有了 `route` / `statement` 再纳入 |
+
+**第三轮抓到的真缺陷（比新增测试更值钱）**：`cruxline judge` 从来没用过产品自己的 rubric。
+`cmd_judge` 写的是 `Judge(threshold=...)`，`Judge` 的默认 rubric 是 `judge.py` 里那套通用五条，
+而产品与 `scripts/real_traces.py`、README 用的都是 `rubrics.agent_rubric()`（两个 fatal 项、权重合计 1.0）。
+同一批 60 条真实轨迹：**命令行报 34/60 通过，文档写 59/60**，差 25 条且没有任何提示——
+因为「判错了 rubric」在输出上只是数字偏小，不报错。
+修法：`judge` 增加 `--rubric {agent,default}`，默认 `agent`；JSON 里带上 `"rubric"` 字段。
+正对照测试显式要 `default` 时必须真的换过去（否则「默认对」可能只是写死）。
+
+## 还没打磨到的（第三轮之后的诚实清单）
+
+- `agent-inbox` / `agent-store` 没有查询型子命令，因此没有 `--json`（理由见上）。
 - `filing-lens` 的中文提问靠 66 条词表桥接，词表外的问法直接拒答（既定边界，写进 README）。
 - `_is_pure_cjk` 死代码仍在（等用户确认删除）。
 - e2e 用固定 CIK（Apple）与固定夹具，**不覆盖** `data/` 里其余 21 份文件的解析差异。

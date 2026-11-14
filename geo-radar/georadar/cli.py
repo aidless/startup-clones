@@ -18,6 +18,36 @@ from .extract import find_mentions
 from .models import Run
 
 
+def _brands_payload(view) -> list[dict]:
+    """品牌行与人读表格同源：都从 BrandStats 取，不另算一遍。"""
+    return [
+        {
+            "name": name,
+            "mentions": st.mentions,
+            "share_of_voice": round(st.share_of_voice, 6),
+            "prompts_seen": st.prompts_seen,
+            "avg_position": st.avg_position,
+            "sentiment": round(st.sentiment, 4),
+        }
+        for name, st in sorted(view.stats.items(), key=lambda kv: (-kv[1].mentions, kv[0]))
+    ]
+
+
+def _run_payload(view) -> dict:
+    return {
+        "run_id": view.run.run_id,
+        "brand": view.run.brand,
+        "category": view.run.category,
+        "competitors": list(view.run.competitors),
+        "provider": view.run.provider,
+        "created_at": view.run.created_at,
+        "prompts_total": view.prompts_total,
+        "answers": len(view.answers),
+        "mentions": len(view.mentions),
+        "brands": _brands_payload(view),
+    }
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     competitors = [c.strip() for c in args.competitors.split(",") if c.strip()]
     brands = [args.brand] + competitors
@@ -44,6 +74,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     # 就是「真正落盘、以后还能复现」的那份数，若落库有丢失会当场看得见。
     v = view.load_view(conn, run.run_id)
 
+    if args.json:
+        payload = _run_payload(v)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as f:
+                f.write(v.markdown + "\n")
+            payload["report_path"] = args.out
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
     print(f"run_id   : {run.run_id}")
     print(f"prompts  : {len(ps)} × {args.repeat} = {len(v.answers)} 次回答")
     print(f"mentions : {len(v.mentions)}")
@@ -61,7 +100,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     conn = store.connect(args.db)
-    print(view.load_view(conn, args.run_id).markdown)
+    v = view.load_view(conn, args.run_id)
+    if args.json:
+        print(json.dumps(_run_payload(v), ensure_ascii=False, indent=2))
+        return 0
+    print(v.markdown)
     return 0
 
 
@@ -99,11 +142,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--limit", type=int, default=0)
     r.add_argument("--db", default="georadar.db")
     r.add_argument("--out", default="")
+    r.add_argument("--json", action="store_true", help="输出 JSON")
     r.set_defaults(func=cmd_run)
 
     p = sub.add_parser("report", help="重新渲染历史 run")
     p.add_argument("--db", default="georadar.db")
     p.add_argument("--run-id", required=True)
+    p.add_argument("--json", action="store_true", help="输出 JSON")
     p.set_defaults(func=cmd_report)
 
     d = sub.add_parser("demo", help="零配置演示")

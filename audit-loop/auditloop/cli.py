@@ -70,8 +70,46 @@ def build_run(entity: str = "Acme Industrial") -> AuditRun:
     ).run()
 
 
+def _finding_payload(f) -> dict:
+    return {"check": f.check, "assertion": f.assertion, "ref": f.ref,
+            "severity": f.severity, "detail": f.detail, "amount": f.amount}
+
+
+def run_payload(run) -> dict:
+    """一轮审计的结构化形状：steps 是「跑了什么」，exceptions 是「要人看什么」。"""
+    return {
+        "entity": run.entity,
+        "period_end": run.period_end.isoformat(),
+        "status": run.status,
+        "steps": [
+            {
+                "name": r.name,
+                "assertion": r.assertion,
+                "status": r.status,
+                "error": r.error,
+                "rows_examined": r.rows_examined,
+                "findings": len(r.findings),
+            }
+            for r in run.results
+        ],
+        "exceptions": [_finding_payload(f) for f in run.findings],
+    }
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     run = build_run(args.entity)
+    if args.json:
+        if args.out:
+            print(json.dumps(run_payload(run), ensure_ascii=False, indent=2))
+            detail = {
+                "总账分录": [f"{e.entry_id} {e.date} {e.account} {e.amount:,.2f} {e.memo}" for e in fixtures.entries()],
+                "银行流水": [f"{b.line_id} {b.date} {b.amount:,.2f} {b.memo}" for b in fixtures.bank_lines()],
+                "发票": [f"{i.invoice_id} {i.customer} {i.amount:,.2f} 到期 {i.due_date}" for i in fixtures.invoices()],
+            }
+            write_workpaper(run, args.out, detail)
+        else:
+            print(json.dumps(run_payload(run), ensure_ascii=False, indent=2))
+        return 0
     print(run.to_markdown())
     if args.out:
         detail = {
@@ -175,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run", help="跑一轮审计程序")
     r.add_argument("--entity", default="Acme Industrial")
     r.add_argument("--out", default="out/workpaper.xlsx")
+    r.add_argument("--json", action="store_true", help="输出 JSON（不打印底稿正文）")
     r.set_defaults(func=cmd_run)
     d = sub.add_parser("demo", help="零配置演示")
     d.set_defaults(func=cmd_demo)
