@@ -1,4 +1,13 @@
 {
+  "parser_digest": "f59ec3713c2d",
+  "summary": {
+    "total": 22,
+    "ok": 22,
+    "broken": 0,
+    "with_facts": 22,
+    "min_chunks": 230,
+    "min_sections": 1
+  },
   "rows": [
     {
       "cik": "0000002488",
@@ -10,8 +19,7 @@
       "sections": 20,
       "chunks": 692,
       "tables": 67,
-      "has_xbrl": true,
-      "ms": 2669
+      "has_xbrl": true
     },
     {
       "cik": "0000019617",
@@ -23,8 +31,7 @@
       "sections": 15,
       "chunks": 2964,
       "tables": 310,
-      "has_xbrl": true,
-      "ms": 37670
+      "has_xbrl": true
     },
     {
       "cik": "0000021344",
@@ -36,8 +43,7 @@
       "sections": 20,
       "chunks": 1132,
       "tables": 114,
-      "has_xbrl": true,
-      "ms": 5402
+      "has_xbrl": true
     },
     {
       "cik": "0000050863",
@@ -49,8 +55,7 @@
       "sections": 1,
       "chunks": 908,
       "tables": 102,
-      "has_xbrl": true,
-      "ms": 7421
+      "has_xbrl": true
     },
     {
       "cik": "0000080424",
@@ -62,8 +67,7 @@
       "sections": 20,
       "chunks": 619,
       "tables": 89,
-      "has_xbrl": true,
-      "ms": 3434
+      "has_xbrl": true
     },
     {
       "cik": "0000097476",
@@ -75,8 +79,7 @@
       "sections": 16,
       "chunks": 401,
       "tables": 74,
-      "has_xbrl": true,
-      "ms": 2953
+      "has_xbrl": true
     },
     {
       "cik": "0000104169",
@@ -88,8 +91,7 @@
       "sections": 18,
       "chunks": 600,
       "tables": 83,
-      "has_xbrl": true,
-      "ms": 3131
+      "has_xbrl": true
     },
     {
       "cik": "0000320193",
@@ -101,8 +103,7 @@
       "sections": 20,
       "chunks": 419,
       "tables": 59,
-      "has_xbrl": true,
-      "ms": 2127
+      "has_xbrl": true
     },
     {
       "cik": "0000789019",
@@ -114,8 +115,7 @@
       "sections": 21,
       "chunks": 607,
       "tables": 87,
-      "has_xbrl": true,
-      "ms": 7738
+      "has_xbrl": true
     },
     {
       "cik": "0000796343",
@@ -127,8 +127,7 @@
       "sections": 19,
       "chunks": 627,
       "tables": 70,
-      "has_xbrl": true,
-      "ms": 3015
+      "has_xbrl": true
     },
     {
       "cik": "0000804328",
@@ -140,8 +139,7 @@
       "sections": 20,
       "chunks": 609,
       "tables": 65,
-      "has_xbrl": true,
-      "ms": 2323
+      "has_xbrl": true
     },
     {
       "cik": "0000858877",
@@ -153,8 +151,7 @@
       "sections": 20,
       "chunks": 744,
       "tables": 126,
-      "has_xbrl": true,
-      "ms": 4989
+      "has_xbrl": true
     },
     {
       "cik": "0000909832",
@@ -166,8 +163,7 @@
       "sections": 20,
       "chunks": 389,
       "tables": 56,
-      "has_xbrl": true,
-      "ms": 1754
+      "has_xbrl": true
     },
     {
       "cik": "0001018724",
@@ -179,8 +175,7 @@
       "sections": 20,
       "chunks": 546,
       "tables": 65,
-      "has_xbrl": true,
-      "ms": 2342
+      "has_xbrl": true
     },
     {
       "cik": "0001045810",
@@ -192,8 +187,7 @@
       "sections": 20,
       "chunks": 657,
       "tables": 61,
-      "has_xbrl": true,
-      "ms": 2382
+      "has_xbrl": true
     },
     {
       "cik": "0001108524",
@@ -205,8 +199,7 @@
       "sections": 20,
       "chunks": 783,
       "tables": 88,
-      "has_xbrl": true,
-      "ms": 3581
+      "has_xbrl": true
     },
     {
       "cik": "0001318605",
@@ -218,8 +211,7 @@
       "sections": 20,
       "chunks": 642,
       "tables": 75,
-      "has_xbrl": true,
-      "ms": 3364
+      "has_xbrl": true
     },
     {
       "cik": "0001326801",
@@ -231,8 +223,7 @@
       "sections": 20,
       "chunks": 825,
       "tables": 69,
-      "has_xbrl": true,
-      "ms": 3135
+      "has_xbrl": true
     },
     {
       "cik": "0001341439",
@@ -244,8 +235,7 @@
       "sections": 20,
       "chunks": 700,
       "tables": 81,
-      "has_xbrl": true,
-      "ms": 7940
+      "has_xbrl": true
     },
     {
       "cik": "0001652044",
@@ -257,8 +247,7 @@
       "sections": 20,
       "chunks": 740,
       "tables": 81,
-      "has_xbrl": true,
-      "ms": 3333
+      "has_xbrl": true
     },
     {
       "cik": "0001730168",
@@ -270,8 +259,7 @@
       "sections": 19,
       "chunks": 712,
       "tables": 85,
-      "has_xbrl": true,
-      "ms": 4242
+      "has_xbrl": true
     },
     {
       "cik": "0002078730",
@@ -283,16 +271,7 @@
       "sections": 15,
       "chunks": 230,
       "tables": 34,
-      "has_xbrl": true,
-      "ms": 998
+      "has_xbrl": true
     }
-  ],
-  "summary": {
-    "total": 22,
-    "ok": 22,
-    "broken": 0,
-    "with_facts": 22,
-    "min_chunks": 230,
-    "min_sections": 1
-  }
+  ]
 }

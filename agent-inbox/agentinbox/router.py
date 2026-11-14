@@ -9,7 +9,7 @@ from typing import Callable
 
 from .channels import Inbound, normalize
 from .memory import Memory
-from .policy import Policy
+from .policy import Decision, Policy
 
 
 @dataclass
@@ -19,6 +19,8 @@ class Outbound:
     text: str
     delivered: bool
     approval_id: str = ""
+    risk: str = ""      # 出口判定的风险档（money / external / …），查询面要回答「为什么」
+    reason: str = ""
 
 
 class Directory:
@@ -44,10 +46,16 @@ class Router:
         self.memory = memory
         self.responder = responder
         self.directory = directory or Directory()
+        self.last_inbound: Decision | None = None   # 入站判定原文（拒绝理由要能原样取回）
 
     def handle(self, channel: str, payload: dict) -> Outbound | None:
-        inbound = normalize(channel, payload)
+        return self.handle_inbound(normalize(channel, payload))
+
+    def handle_inbound(self, inbound: Inbound) -> Outbound | None:
+        """`handle` 拆出这一步，是为了让命令行能直接喂一条 Inbound 而不伪造 webhook 载荷
+        ——两份「入站→应答→审批」的实现迟早会分叉。"""
         decision = self.policy.check_inbound(inbound)
+        self.last_inbound = decision
         if not decision.allow:
             return None
 
@@ -63,4 +71,5 @@ class Router:
             # 不要从人读文案里抠 id：原实现 reason.split(" ")[1] 拿到的是
             # "AP-0001（money）"，拿去 decide() 直接 KeyError。
             approval_id = out_decision.approval_id
-        return Outbound(inbound.channel, inbound.thread_id, reply, delivered, approval_id)
+        return Outbound(inbound.channel, inbound.thread_id, reply, delivered, approval_id,
+                        out_decision.risk, out_decision.reason)

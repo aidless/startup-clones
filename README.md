@@ -2,11 +2,11 @@
 
 六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**406 个测试，0 个 mock 掉的断言，全部离线可跑。**
+**409 个测试，0 个 mock 掉的断言，全部离线可跑。**
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 406 passed
+make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 409 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 make e2e       # 端到端串联：十个阶段跨六个项目真跑一次（约 40 秒）
 make matrix    # 全语料解析矩阵：22 份 10-K 逐份解析并与基线比对（约 2 分钟）

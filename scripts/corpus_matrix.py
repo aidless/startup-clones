@@ -16,10 +16,12 @@
     python3 scripts/corpus_matrix.py --ask           # 额外跑一个数字题（慢，约 2 倍）
     python3 scripts/corpus_matrix.py --only 0000320193            # 只跑一份（测试用）
     python3 scripts/corpus_matrix.py --baseline docs/corpus-matrix.json   # 与基线比对
+    python3 scripts/corpus_matrix.py --record docs/corpus-matrix.json     # 重记基线（约 2 分钟）
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -27,8 +29,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FILING_DIR = ROOT / "filing-lens"
+PARSER_DIR = Path(__file__).resolve().parents[1] / "filing-lens" / "filinglens"
+
 DATA_DIR = FILING_DIR / "data"
 QUESTION = "What was net income?"
+
+
+def parser_digest() -> str:
+    """解析器源码指纹：基线记着「这些读数由哪一版解析器产出」。
+
+    只比读数有个洞——改了解析器而读数恰好没变，`--baseline` 照样全绿。
+    """
+    h = hashlib.sha256()
+    for f in sorted(PARSER_DIR.glob("*.py")):
+        h.update(f.name.encode())
+        h.update(hashlib.sha256(f.read_bytes()).digest())
+    return h.hexdigest()[:12]
 
 
 def _rows(ask: bool, only: set[str] | None = None) -> list[dict]:
@@ -70,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ask", action="store_true", help="额外跑一个数字题")
     ap.add_argument("--only", default="", help="逗号分隔的 CIK，只跑这几份")
     ap.add_argument("--baseline", default="", help="与已记录的矩阵 JSON 比对（漂移即 exit 1）")
+    ap.add_argument("--record", default="", help="把本次读数写成基线（含解析器指纹）")
     args = ap.parse_args(argv)
 
     only = {c.strip() for c in args.only.split(",") if c.strip()} or None
@@ -96,6 +113,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{r['cik']:<12} {r['period']:<12} {r.get('sections', 0):>4} "
               f"{r.get('chunks', 0):>6} {r.get('tables', 0):>4} "
               f"{('有' if r.get('has_xbrl') else '无'):>5} {r['ms']:>6}  {note}")
+    if args.record:
+        Path(args.record).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.record).write_text(
+            # 基线里不留 `ms`：耗时随机器负载浮动，记进去会让每次重记都产生 22 行
+            # 无意义 diff，也会让人误以为「读数变了」。比对只认结构字段（见
+            # `_compare_baseline` 的 `fields`）。
+            json.dumps({"parser_digest": parser_digest(), "summary": summary,
+                        "rows": [{k: v for k, v in r.items() if k != "ms"} for r in rows]},
+                       ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"基线已写入 {args.record}（parser {parser_digest()}）")
+
     drift = _compare_baseline(rows, args.baseline) if args.baseline else []
     if drift:
         print("\n与基线不一致：")

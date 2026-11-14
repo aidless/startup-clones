@@ -112,7 +112,13 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
 
 ## 还没打磨到的（第三轮之后的诚实清单）
 
-- `agent-inbox` / `agent-store` 没有查询型子命令，因此没有 `--json`（理由见上）。
+- ~~`agent-inbox` / `agent-store` 没有查询型子命令~~ 已处理一半：`agent-inbox` 补了
+  `route` / `queue` 两条查询命令并纳入 `--json` 契约（审批落盘 `.agentinbox/approvals.jsonl`，
+  `route` 写、`queue` 跨进程读）；`agent-store` 仍未纳入——它的 `statement` 会写账，
+  是「变更」不是「查询」，要纳入得先决定幂等键怎么在命令行暴露。
 - `filing-lens` 的中文提问靠 66 条词表桥接，词表外的问法直接拒答（既定边界，写进 README）。
 - `_is_pure_cjk` 死代码仍在（等用户确认删除）。
-- e2e 用固定 CIK（Apple）与固定夹具，**不覆盖** `data/` 里其余 21 份文件的解析差异。
+- e2e 用固定 CIK（Apple）与固定夹具，不覆盖其余 21 份的解析差异——这条由 `make matrix`
+  单独负责；但它在**每次提交**里不跑（两分钟），只在改解析器后手动跑。
+  现在有棘轮兜住：基线记着产出它的解析器源码指纹（`parser_digest`），改了解析器而不重记基线，
+  `tests/test_corpus_matrix.py::test_baseline_was_produced_by_the_current_parser` 直接红。

@@ -64,3 +64,20 @@ def test_full_matrix_baseline_is_present_and_self_consistent():
     assert all(r["facts"] for r in rows)
     fallback = [r["cik"] for r in rows if r.get("sections", 0) <= 2]
     assert fallback == [INTEL], f"退化形态的文件变成了 {fallback}，先解释再修基线"
+
+
+def test_baseline_was_produced_by_the_current_parser():
+    """棘轮：基线里记着「产出它的解析器源码指纹」，与现在不一致就红。
+
+    只比对读数会有一个洞——改了解析器、读数恰好没变，`--baseline` 仍然全绿，
+    于是「与基线比对」永远通过，等于没有闸。把源码指纹钉进基线后，
+    改了解析器就必须重跑一次 `make matrix-record`（两分钟），闸才重新有意义。
+    """
+    from scripts.corpus_matrix import parser_digest  # noqa: PLC0415 —— 只在这条测试里用
+
+    data = json.loads(FULL_MATRIX.read_text(encoding="utf-8"))
+    assert "parser_digest" in data, "基线没记解析器指纹，先跑 make matrix-record"
+    current = parser_digest()
+    assert data["parser_digest"] == current, (
+        "解析器源码变了（基线 %s → 现在 %s）：跑 `make matrix-record` 重记基线，"
+        "再 `make matrix` 看读数漂移" % (data["parser_digest"], current))
