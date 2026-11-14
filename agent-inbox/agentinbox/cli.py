@@ -8,6 +8,7 @@ import argparse
 import json
 import sys
 
+from . import __version__
 from .channels import normalize
 from .memory import Memory
 from .policy import Policy
@@ -66,6 +67,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="agentinbox", description="常驻 agent 的消息层")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("demo", help="零配置演示")
     d.set_defaults(func=cmd_demo)

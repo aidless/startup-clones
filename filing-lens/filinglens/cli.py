@@ -12,6 +12,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from . import edgar, facts as F, fixtures
 from .answer import Answerer
 
@@ -94,6 +95,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="filinglens", description="用自然语言查 SEC 公开文件，答案带出处")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     i = sub.add_parser("index", help="解析并建立索引")

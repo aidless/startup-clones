@@ -41,7 +41,7 @@ cruxline 的 60 条轨迹是**确定性重放**，逐条差异（回归/修复�
 cd startup-clones
 python3 -m pytest cruxline/tests/test_borrowed_stats.py geo-radar/tests/test_borrowed_stats.py \
                  agent-inbox/tests/test_borrowed_rfc5322.py agent-store/tests/test_borrowed_integrity.py -q  # 20 passed
-python3 -m pytest -q      # 351 passed（借入前 331）
+python3 -m pytest -q      # 396 passed（借入前 331，借入后 351，第二轮回补后 396）
 python3 scripts/polish_audit.py   # 7 个项目硬项全过
 ```
 

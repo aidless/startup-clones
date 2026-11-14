@@ -54,7 +54,10 @@ def markdown_report(
         "| 品牌 | 提及次数 | 出现率 | 声量份额 | 平均位次 | 情感 |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for name, s in sorted(stats.items(), key=lambda kv: -kv[1].mentions):
+    # 并列时按品牌名兜底排序：内存路径的 mentions/answers 顺序与 SQLite 读回的
+    # （prompt_id, run_index）顺序不同，只按 -mentions 排会让并列行随输入顺序漂移，
+    # 同一批数据走 `run` 与 `report --run-id` 打印出不同的行序（实测已复现）。
+    for name, s in sorted(stats.items(), key=lambda kv: (-kv[1].mentions, kv[0])):
         rate = s.prompts_seen / prompts_total if prompts_total else 0
         lo, hi = proportion_ci(s.prompts_seen, prompts_total) if prompts_total else (0.0, 0.0)
         mark = " ←" if name == brand else ""
@@ -100,7 +103,8 @@ def markdown_report(
     if doms:
         lines.append("| 域名 | 占比 |")
         lines.append("| --- | ---: |")
-        for d, share in list(doms.items())[:15]:
+        # 同上：citation_share 的并列项按插入顺序，这里用 (占比降序, 域名升序) 定序
+        for d, share in sorted(doms.items(), key=lambda kv: (-kv[1], kv[0]))[:15]:
             lines.append(f"| {d} | {_pct(share)} |")
     else:
         lines.append("无引用源。")

@@ -29,7 +29,7 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
 ## 现在的状态
 
 - 七个项目 **硬项全过**（`7 个项目硬项全过。`）
-- `python3 -m pytest` → **331 passed**（打磨完成时；借入外部机制后为 351，见 `docs/BORROWED.md`）
+- `python3 -m pytest` → **331 passed**（打磨完成时；借入外部机制后 351；第二轮为 **396**）
 - 这根命令以前跑不起来：`python3 -m pytest` 会把仓库根放进 `sys.path`，而 `cruxline/`（目录）与
   `cruxline/cruxline/`（真包）同名，`import cruxline` 先命中那个没有 `__init__.py` 的目录，
   子项目测试全部 ImportError；同时七个项目各自 `pyproject` 里的 `pythonpath=["."]` 在根目录不生效。
@@ -69,12 +69,34 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
    三条（多次出现丢失、落库压扁、大小写）当成「现存限制」写了进去——修完之后那些句子立刻变成假话。
    **改实现和改文档必须同一次提交**，否则下次读文档的人会按错误的边界做决策。
 
-## 还没打磨到的（诚实清单）
+## 第二轮：把这份清单自己往后推
 
-- 跨项目的 CLI 风格不统一：参数命名（`--brand/--cik/--run-id`）各写各的，没有统一的 `--json` 输出开关。
-- 错误类型没有共享基类：六个包各自定义自己的异常，调用方无法用 `except AppError` 一次兜住。
-- `geo-radar` 的 `run` 与 `report` 仍是两条代码路径（一份内存、一份落库），本次只保证两者一致，没有合并。
-- `audit-loop` 的分析性程序仍未接进 CLI（`python -m auditloop.cli run` 只跑六项），README 的边界段已如实写明。
-- `filing-lens` 的中文提问靠 66 条词表桥接，词表外的问法直接拒答；`answer.py` 里 `_is_pure_cjk` 是死代码。
-- 七个项目的测试全部离线、无 mock 掉的断言，但**没有一次在同一份数据上做过端到端串联**
-  （`console/` 是最接近的，它只验契约不验结论）。
+第一轮之后列了六条「还没打磨到的」。第二轮逐条处置，处置方式本身也是判据：
+**能变成机器检查的就不留成待办，不能变的就写清为什么不变**。
+
+| 待办 | 处置 | 落点 / 判据 |
+|---|---|---|
+| 跨项目 CLI 风格不统一 | 改成**契约测试**，不做公共包 | `tests/test_cli_contract.py`：六项 × 四条（`--help` 退出 0 且首行 `usage:`、`--version` 与 pyproject 版本一致、有 `demo`、未知子命令退出 2），24 例 |
+| 错误类型无共享基类 | **决定不引入**，改由退出码契约对外 | 每个项目独立成仓库、彼此不 import；抽公共异常包会让「单独可用」变成「必须带另一个项目」。契约见上表第 4 条 |
+| geo-radar `run`/`report` 两条路径 | 合并成一条 | 新建 `georadar/view.py`：`assemble()` 是内存侧入口、`load_view()` 是读库侧入口，`cmd_run` 也改成**落库后再读回来**打印，两条命令走同一个函数；`report.py` 加并列项兜底排序（只按 `-mentions` 排会让行序随输入顺序漂移）。`geo-radar/tests/test_single_path.py` 断言两条路径 markdown 逐字相同 |
+| audit-loop 分析程序未进 CLI | 接进 `analytics` 子命令 | `auditloop/cli.py` 新增 `cmd_analytics`：`analytics --facts F [--json]`，退出码 0=跑完无异常 / 1=有异常 / 2=没跑成（文件缺失、JSON 坏、缺收入列）；文本行由 `--json` 字段逐字重建的断言在 `audit-loop/tests/test_cli_analytics.py` |
+| `answer.py:_is_pure_cjk` 死代码 | **只报不删**（第 34 条） | 功能已被 `answer.py:322` 的 `if CJK_RE.search(question) and not groups:` 覆盖（那条注释写明「判据是中文没命中词表概念」）；删它属于「本次请求之外的重构」，等用户点头 |
+| 没有端到端串联 | 新建 `scripts/e2e.py` + `tests/test_e2e.py` | 十个阶段跨六个项目真跑子进程；两处真交接（run_id 传给 report、run 报的品牌提及数必须等于 report 里的同一个数）+ 两处产物断言（底稿 ≥2000B、报告 ≥200B） |
+
+**e2e 第一次跑就抓到真缺陷**：`cruxline judge --traces data/traces.jsonl` 抛
+`json.decoder.JSONDecodeError: Extra data: line 2 column 1 (char 497557)` ——
+`cmd_judge` 与 `cmd_calibrate` 都是 `load_traces(json.loads(open(...).read()))`，
+把整份文件当一份 JSON 读，而仓库自带语料是 60 行 JSONL：**真实语料在命令行上根本判不了**。
+单元测试全绿是因为它们喂 `fixtures.TRACES` 内存对象，从没走过文件。
+修法：`cruxline/cruxline/cli.py` 新增 `_read_traces()`（`[` 开头按数组读，否则逐行读），
+回归测试 `cruxline/tests/test_cli_traces.py` 三例（JSONL / JSON 数组正对照 / 仓库 60 条实录能判）。
+
+第二条教训：**e2e 的第一个失败是我自己断言写错**（品牌行带「←」标记、那一列是每品牌提及数不是合计）。
+串联脚本的断言错了会把「链好着」报成「链断了」，所以断言必须拿真输出对一遍再固化。
+
+## 还没打磨到的（第二轮之后的诚实清单）
+
+- 没有统一的 `--json` 输出开关：现在只有 `audit-loop analytics --json` 一处，其余仍打人类可读文本。
+- `filing-lens` 的中文提问靠 66 条词表桥接，词表外的问法直接拒答（既定边界，写进 README）。
+- `_is_pure_cjk` 死代码仍在（等用户确认删除）。
+- e2e 用固定 CIK（Apple）与固定夹具，**不覆盖** `data/` 里其余 21 份文件的解析差异。

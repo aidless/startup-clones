@@ -91,7 +91,7 @@ checks.py     reconcile_bank / ar_aging / revenue_cutoff / duplicate_payments / 
 engine.py     AuditRun：注册程序 → 逐个执行 → 汇总（status / high / coverage）
 workpaper.py  openpyxl 三页底稿（摘要 / 例外 / 明细）
 fixtures.py   埋了 6 类例外的确定性夹具
-cli.py        run / demo
+cli.py        run / analytics / demo
 ```
 
 ## 路线图
@@ -109,7 +109,7 @@ cli.py        run / demo
 - **只做确定性检查，不做判断。** 全部检查是纯函数、无 IO、无随机（`checks.py:1-5`）；不判重要性水平、不出审计意见、不建议调整分录。`TOL = 0.01`（`checks.py:15`）是金额匹配容差，不是重要性阈值——任何金额的例外都会被列出，是否调整由会计师决定。
 - **`status=clean` 不等于没问题。** `AuditRun.status` 只在「无程序报错」且「无 high 例外」时才返回 `clean`（`engine.py:66-71`），medium/low 例外可以同时存在于一份 `clean` 的底稿里；`coverage()` 报的是「程序跑了没」（`engine.py:79-81`），不是「风险覆盖了没」。
 - **六类检查各有一组静默跳过条件，没报例外可能是没查。** `reconcile_bank` 只碰科目名里含 `银行存款/现金/cash/bank` 的分录，判断是**大小写不敏感**的子串匹配（`checks.py:39,50`，`Bank Account USD`/`CASH-1000` 都能进，本次打磨前的区分大小写写法会让整批英文科目匹配不上）；科目名既不含这几个词、又不是真实现金科目的（例如 `其他货币资金`）同样不参与；`duplicate_payments` 只分组 `amount < 0 and vendor` 的分录（`checks.py:146`），没填 vendor 的付款即使同日同额重复也一条例外都不出；`revenue_cutoff` 只处理 `revenue_date is not None` 的发票（`checks.py:122`），未确认收入的发票整条跳过；`ar_aging` 按发票全额、按 `due_date` 算（`checks.py:88-112`），没有回款核销匹配，部分回款的发票仍按全额在账。
-- **分析性程序在 CLI 里没有注册。** `auditloop/cli.py` 的 `build_run` 只注册 6 个程序，`analytics.run_all` 只被 `scripts/real_analytics.py` 调用——`python -m auditloop.cli run` 生成的底稿里没有毛利率/应收增速/现金流这三条。直接调用时，`receivables`/`gross_profit`/`cfo` 缺表或某年缺数会返回空清单（`analytics.py:54-55,100-101`，`_num` 还会挡掉 `None`、`prev==0` 在 `analytics.py:44-48`），与「跑了且没问题」在输出上完全一样。
+- **分析性程序有单独的 CLI 出口，但不在 `run` 的底稿里。** `python -m auditloop.cli run` 仍只注册 6 个程序（`cli.py:build_run`）；三条比率/趋势检查走 `python -m auditloop.cli analytics --facts <年度序列 JSON> [--json]`（`cli.py:cmd_analytics`），退出码 0=跑完无异常 / 1=跑完有异常 / 2=没跑成。输入要调用方自己把 ERP/XBRL 导成 `revenue`/`receivables`/`gross_profit`/`cfo`：缺列或某年缺数时那条会印「数据不足」（`analytics.py:54-55,100-101`，`_num` 挡 `None`、`prev==0` 在 `analytics.py:44-48`），不再与「跑了且没问题」共用同一行输出。
 - **期间与日期全是朴素 `date`，无时区、无缺省。** 期末日由调用方传入（`fixtures.PERIOD_END`），`revenue_cutoff` 的 `tolerance_days` 默认 0（`checks.py:115`）：发货日等于期末日不算例外，晚一天就算；带时间戳的导出行必须先归一到同一时区的日历日，否则 23:00 与次日 01:00 会落到相邻两天。`due_date` 为空的发票不进任何逾期桶，单列「无到期日」（`checks.py:95-99`）——算不出账龄就报不出逾期，也不会被默认算成「未到期」。
 - **每条例外只带业务主键，不带源文件行号。** `Finding.ref` 是发票号/凭证号（重复付款写成 `G3/G6`，程序自身失败写成 `ENGINE`，`engine.py:49-51`）；底稿「明细」页的「行号」是导出时的顺序号 `enumerate(rows, 1)`（`workpaper.py:78`），源数据筛过行之后它与原始 Excel 行号不再对应，落到「哪个文件哪一行」得靠 ref 回原表查。也只报了这 6 类 + 3 类分析性程序能查的东西：函证、抽样、期后事项、关联方披露都不在范围内（见路线图）。
 - **单步失败不会终止整轮，但会让结论降级。** 异常被捕获成 `status=error` 并注入一条 `ref=ENGINE` 的 high 例外（`engine.py:46-53`），整体 `status` 变成 `degraded`（`engine.py:67-68`）；此时「其余程序都 ok」不代表数据没问题，只代表它们没在那批脏行上崩。

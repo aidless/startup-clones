@@ -12,7 +12,8 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from . import metrics, prompts, providers, report, store
+from . import __version__
+from . import prompts, providers, store, view
 from .extract import find_mentions
 from .models import Run
 
@@ -38,31 +39,29 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     conn = store.connect(args.db)
     store.save_run(conn, run, all_mentions)
-    stats = metrics.brand_stats(all_mentions, len(ps))
+    # 落库后从库里读回来装配：内存里的 stats/answers 与 `report --run-id` 走同一个
+    # 函数（georadar.view.assemble），两条路径不再各拼一份。副作用是这里打印的
+    # 就是「真正落盘、以后还能复现」的那份数，若落库有丢失会当场看得见。
+    v = view.load_view(conn, run.run_id)
 
     print(f"run_id   : {run.run_id}")
-    print(f"prompts  : {len(ps)} × {args.repeat} = {len(run.answers)} 次回答")
-    print(f"mentions : {len(all_mentions)}")
-    for name, s in sorted(stats.items(), key=lambda kv: -kv[1].mentions):
+    print(f"prompts  : {len(ps)} × {args.repeat} = {len(v.answers)} 次回答")
+    print(f"mentions : {len(v.mentions)}")
+    for name, s in sorted(v.stats.items(), key=lambda kv: (-kv[1].mentions, kv[0])):
         print(f"  {name:<24} mentions={s.mentions:<4} sov={s.share_of_voice:.1%} "
               f"avg_pos={s.avg_position}")
     if args.out:
-        md = report.markdown_report(args.brand, args.category, competitors, stats,
-                                    all_mentions, run.answers, len(ps))
         with open(args.out, "w", encoding="utf-8") as f:
-            f.write(md)
+            # 末尾补换行：否则同一份报表「落盘文件」与「report 打印」只差一个
+            # 行尾换行符，diff 会报 43c43，看上去像两份报表不一样。
+            f.write(v.markdown + "\n")
         print(f"report   : {args.out}")
     return 0
 
 
 def cmd_report(args: argparse.Namespace) -> int:
     conn = store.connect(args.db)
-    run, mentions = store.load_run(conn, args.run_id)
-    ids = {a.prompt_id for a in run.answers}
-    stats = metrics.brand_stats(mentions, len(ids))
-    md = report.markdown_report(run.brand, run.category, run.competitors, stats,
-                                mentions, run.answers, len(ids))
-    print(md)
+    print(view.load_view(conn, args.run_id).markdown)
     return 0
 
 
@@ -84,6 +83,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="georadar", description="AI 搜索引擎可见性监测")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="跑一轮探测")

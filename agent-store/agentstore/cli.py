@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import __version__
 from .fixtures import CFO, INVOICE_BOT, RESEARCH
 from .meter import Ledger
 from .registry import Registry, RegistryError
@@ -72,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="agentstore",
         description="agent 应用商店内核：上架 → 安装 → 调用 → 账单的零配置演示")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", title="子命令")
     d = sub.add_parser("demo", help="跑完整演示（缺省子命令）：3 个 agent 上架 → 6 次调用 → 出账单")
     d.set_defaults(func=cmd_demo)

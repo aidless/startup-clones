@@ -1,0 +1,10 @@
+{
+  "entity": "Acme Industrial",
+  "note": "四年年度序列；FY2026 故意留三处背离（应收暴涨、毛利率跳升、现金含量下滑），用于 CLI analytics 的异常项路径。",
+  "years": {
+    "2023": {"revenue": 1000.0, "receivables": 100.0, "gross_profit": 400.0, "cfo": 250.0},
+    "2024": {"revenue": 1050.0, "receivables": 108.0, "gross_profit": 420.0, "cfo": 210.0},
+    "2025": {"revenue": 1100.0, "receivables": 115.0, "gross_profit": 462.0, "cfo": 200.0},
+    "2026": {"revenue": 1155.0, "receivables": 250.0, "gross_profit": 530.0, "cfo": 150.0}
+  }
+}

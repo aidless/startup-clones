@@ -11,12 +11,27 @@ import argparse
 import json
 import sys
 
+from . import __version__
 from . import fixtures
 from .calib import calibrate
 from .judge import Judge
 from .regress import diff
 from .store import add_label, connect, latest_verdicts, load_labels
-from .trace import load_traces
+from .trace import Trace, load_traces
+
+
+def _read_traces(path: str) -> list[Trace]:
+    """读轨迹文件：既接受 JSON 数组，也接受一行一条的 JSONL。
+
+    仓库自带语料是 `data/traces.jsonl`（60 条实录），而这里原先只做
+    `json.loads(整份文件)` —— 直接 `JSONDecodeError: Extra data`，
+    等于真实语料在命令行上根本判不了（单元测试喂内存对象，从没走过文件）。
+    """
+    text = open(path, encoding="utf-8").read().strip()
+    if text.startswith("["):
+        return load_traces(json.loads(text))
+    items = [json.loads(line) for line in text.splitlines() if line.strip()]
+    return load_traces(items)
 
 
 def _pass_map(verdicts) -> dict[str, bool]:
@@ -24,7 +39,7 @@ def _pass_map(verdicts) -> dict[str, bool]:
 
 
 def cmd_judge(args: argparse.Namespace) -> int:
-    traces = load_traces(json.loads(open(args.traces, encoding="utf-8").read()))
+    traces = _read_traces(args.traces)
     judge = Judge(threshold=args.threshold)
     verdicts = judge.score_all(traces)
     conn = connect(args.db)
@@ -37,7 +52,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
 
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
-    traces = load_traces(json.loads(open(args.traces, encoding="utf-8").read()))
+    traces = _read_traces(args.traces)
     human = json.loads(open(args.labels, encoding="utf-8").read())
     judge_map = _pass_map(Judge(threshold=args.threshold).score_all(traces))
     cal = calibrate(human, judge_map, min_kappa=args.min_kappa)
@@ -81,6 +96,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="cruxline", description="agent 轨迹评测与版本回归")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     j = sub.add_parser("judge", help="用 rubric 打分")

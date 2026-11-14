@@ -1,0 +1,9 @@
+{
+  "entity": "Steady Works",
+  "note": "收入/应收同步 10% 增长、毛利率 40% 不动、现金含量 0.25 不动 —— 任何一条都不该被报成异常。",
+  "years": {
+    "2023": {"revenue": 1000.0, "receivables": 100.0, "gross_profit": 400.0, "cfo": 250.0},
+    "2024": {"revenue": 1100.0, "receivables": 110.0, "gross_profit": 440.0, "cfo": 275.0},
+    "2025": {"revenue": 1210.0, "receivables": 121.0, "gross_profit": 484.0, "cfo": 302.5}
+  }
+}

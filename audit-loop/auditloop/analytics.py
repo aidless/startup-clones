@@ -116,7 +116,7 @@ def cash_conversion(s: Series) -> list[Finding]:
                 check="analytics.cash_conversion", assertion=VALUATION,
                 ref=f"FY{cy}", severity="medium",
                 detail=(f"经营现金流/收入 由 {pr:.2f} 降至 {cr:.2f}"
-                        f"（{relative:.0%} 相对下滑），利润的现金含量下降，需检查收入质量"),
+                        f"（{relative:.1%} 相对下滑），利润的现金含量下降，需检查收入质量"),
                 amount=s.cfo[cy],
             ))
     return out
@@ -127,3 +127,175 @@ def run_all(s: Series) -> list[Finding]:
     for fn in (revenue_vs_receivables, gross_margin_trend, cash_conversion):
         findings.extend(fn(s))
     return findings
+
+
+# ---------------- 逐年明细（CLI 的「指标 / 本期 / 上期 / 变化 / 判定」行） ----------------
+#
+# 上面三个程序只吐「例外」，看不出「这一年到底算出了什么数」。命令行要的是
+# 一张逐年明细表，所以这里把**同一个指标**在相邻两年的取值摊开成一条记录：
+# current/prior 都指这个指标本身（例如收入应收增速差取的是「差值」），
+# change = current - prior。文本与 --json 都从这一条记录渲染，
+# 两边不会各算一遍，也就不会出现数字口径不一致。
+
+_PRECISION = {"pp": 1, "%": 1, "x": 2}
+
+
+@dataclass
+class Item:
+    name: str               # 程序键，与 Finding.check 的后半段一致
+    label: str              # 中文指标名
+    ref: str                # 本期财年（"2026"），数据不足时为空
+    prior_ref: str          # 上期财年，首年为空
+    current: float | None
+    prior: float | None
+    change: float | None
+    unit: str               # pp（百分点）| % | x（比率）
+    status: str             # ok | flag | insufficient
+    severity: str = ""
+    detail: str = ""
+
+    @property
+    def flag(self) -> bool:
+        return self.status == "flag"
+
+    def as_dict(self) -> dict:
+        return {
+            "name": self.name, "label": self.label,
+            "ref": self.ref, "prior_ref": self.prior_ref,
+            "current": self.current, "prior": self.prior, "change": self.change,
+            "unit": self.unit, "status": self.status, "flag": self.flag,
+            "severity": self.severity, "detail": self.detail,
+        }
+
+
+def _round(v: float | None, unit: str) -> float | None:
+    if v is None:
+        return None
+    # + 0.0 把 -0.0 归一成 0.0，否则文本会印出 "-0.00"
+    return round(v, _PRECISION[unit]) + 0.0
+
+
+def _consecutive(values: dict[int, float]) -> list[tuple[int, int]]:
+    years = sorted(values)
+    return list(zip(years, years[1:]))
+
+
+def revenue_gap_series(s: Series) -> dict[int, float]:
+    """{财年: 应收增速 - 收入增速}，单位百分点。"""
+    if not s.receivables:
+        return {}
+    out: dict[int, float] = {}
+    common = sorted(set(s.revenue) & set(s.receivables))
+    for prev_y, cur_y in zip(common, common[1:]):
+        rg = _pct(s.revenue.get(cur_y), s.revenue.get(prev_y))
+        ag = _pct(s.receivables.get(cur_y), s.receivables.get(prev_y))
+        if rg is None or ag is None:
+            continue
+        out[cur_y] = ag - rg
+    return out
+
+
+def margin_series(s: Series) -> dict[int, float]:
+    """{财年: 毛利率%}。"""
+    if not s.gross_profit:
+        return {}
+    out: dict[int, float] = {}
+    for y in sorted(set(s.revenue) & set(s.gross_profit)):
+        rev, gp = _num(s.revenue.get(y)), _num(s.gross_profit.get(y))
+        if rev and gp is not None:
+            out[y] = gp / rev * 100
+    return out
+
+
+def cash_ratio_series(s: Series) -> dict[int, float]:
+    """{财年: 经营现金流/收入}。"""
+    if not s.cfo:
+        return {}
+    out: dict[int, float] = {}
+    for y in sorted(set(s.revenue) & set(s.cfo)):
+        rev, cfo = _num(s.revenue.get(y)), _num(s.cfo.get(y))
+        if rev and cfo is not None:
+            out[y] = cfo / rev
+    return out
+
+
+def _items(values: dict[int, float], *, name: str, label: str, unit: str,
+           check: str, findings: list[Finding]) -> list[Item]:
+    """把逐年指标摊成逐项 Item；判定与 detail 直接复用 run_all 的 Finding。
+
+    判定不在这里另写一套阈值 —— 否则 CLI 与程序本身迟早给出相反的结论
+    （正是审查里 P1-d 那类「注释与实现不一致」的近亲）。
+    """
+    idx = {(f.check, f.ref): f for f in findings}
+    years = sorted(values)
+    out: list[Item] = []
+    for i, y in enumerate(years):
+        prev_y = years[i - 1] if i else None
+        cur = values[y]
+        prior = values[prev_y] if prev_y is not None else None
+        f = idx.get((check, f"FY{y}"))
+        out.append(Item(
+            name=name, label=label, ref=str(y),
+            prior_ref=str(prev_y) if prev_y is not None else "",
+            current=_round(cur, unit), prior=_round(prior, unit),
+            change=_round(cur - prior, unit) if prior is not None else None,
+            unit=unit, status="flag" if f else "ok",
+            severity=f.severity if f else "", detail=f.detail if f else "",
+        ))
+    return out
+
+
+def assess(s: Series) -> list[Item]:
+    """三条分析性程序的逐年明细。
+
+    算不出来的程序返回**一条 insufficient 记录**而不是空清单：空清单与
+    「跑了且没问题」在输出上完全一样（README 已知边界点过这一条），
+    命令行必须把「没查」说出来。
+    """
+    findings = run_all(s)
+    specs = (
+        ("revenue_vs_receivables", "应收增速差", "pp",
+         "analytics.revenue_vs_receivables", revenue_gap_series(s)),
+        ("gross_margin", "毛利率", "%", "analytics.gross_margin_trend", margin_series(s)),
+        ("cash_conversion", "现金含量", "x", "analytics.cash_conversion", cash_ratio_series(s)),
+    )
+    out: list[Item] = []
+    for name, label, unit, check, values in specs:
+        out.extend(_items(values, name=name, label=label, unit=unit,
+                          check=check, findings=findings)
+                   or [Item(name=name, label=label, ref="", prior_ref="",
+                            current=None, prior=None, change=None, unit=unit,
+                            status="insufficient")])
+    return out
+
+
+def series_from_years(years: object) -> Series:
+    """把 facts JSON 的 {"2026": {"revenue": ...}} 转成 Series。
+
+    每列独立收：导出表整列缺失是常态，一列没有不该拖垮另外两列。
+    只有收入一列为空算输入错误 —— 三条程序全以收入为基准，没收入什么也算不出来。
+    """
+    if not isinstance(years, dict) or not years:
+        raise ValueError("facts 里没有 years 对象")
+
+    def col(key: str) -> dict[int, float]:
+        out: dict[int, float] = {}
+        for raw_year, row in years.items():
+            if not isinstance(row, dict):
+                continue
+            try:
+                year = int(raw_year)
+            except (TypeError, ValueError):
+                raise ValueError(f"财年不是整数：{raw_year!r}") from None
+            v = _num(row.get(key))
+            if v is not None:
+                out[year] = float(v)
+        return out
+
+    revenue = col("revenue")
+    if not revenue:
+        raise ValueError("years 里没有任何 revenue 数字")
+    return Series(revenue=revenue,
+                  receivables=col("receivables") or None,
+                  gross_profit=col("gross_profit") or None,
+                  cfo=col("cfo") or None)
