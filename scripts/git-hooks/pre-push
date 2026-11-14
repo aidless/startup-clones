@@ -1,0 +1,20 @@
+#!/bin/sh
+# 推送前跑全语料矩阵：解析器改过但基线没重记 = 22 份 10-K 里可能已经有文件读不通，
+# 而这种坏掉在单元测试里看不出来（测试只用少量固定语料）。
+# 逃生门：SKIP_MATRIX_CHECK=1 git push（只在明知基线该滞后时用）。
+set -u
+if [ "${SKIP_MATRIX_CHECK:-0}" = "1" ]; then
+  echo "[pre-push] SKIP_MATRIX_CHECK=1，跳过语料矩阵" >&2
+  exit 0
+fi
+cd "$(git rev-parse --show-toplevel)" || exit 1
+CMD="${MATRIX_CMD:-python3 scripts/corpus_matrix.py --baseline docs/corpus-matrix.json}"
+if sh -c "$CMD" >/tmp/corpus-matrix-prepush.log 2>&1; then
+  echo "[pre-push] 语料矩阵与基线一致" >&2
+  exit 0
+fi
+echo "[pre-push] 语料矩阵与基线不一致，推送已挡住（日志 /tmp/corpus-matrix-prepush.log）" >&2
+tail -n 20 /tmp/corpus-matrix-prepush.log >&2
+echo "[pre-push] 确认改动符合预期后重记基线：make matrix-record && make matrix，再推送" >&2
+echo "[pre-push] 确实要跳过：SKIP_MATRIX_CHECK=1 git push" >&2
+exit 1

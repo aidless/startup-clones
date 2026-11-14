@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
 from .manifest import AgentManifest
@@ -18,6 +19,19 @@ CREATE TABLE IF NOT EXISTS usage (
     units      INTEGER NOT NULL,
     cents      INTEGER NOT NULL,
     ts         TEXT NOT NULL,
+    PRIMARY KEY (buyer, request_id)
+);
+CREATE TABLE IF NOT EXISTS statements (
+    -- 出账是「变更」：一旦按 request_id 落成快照，同一个 id 再来只回放它。
+    -- 键scope 到 buyer，理由与 usage 相同：B 撞上 A 的账单号不能读到 A 的数。
+    request_id      TEXT NOT NULL,
+    buyer           TEXT NOT NULL,
+    fee_pct         INTEGER NOT NULL,
+    gross_cents     INTEGER NOT NULL,
+    platform_cents  INTEGER NOT NULL,
+    developer_cents INTEGER NOT NULL,
+    rows_json       TEXT NOT NULL,
+    ts              TEXT NOT NULL,
     PRIMARY KEY (buyer, request_id)
 );
 """
@@ -58,10 +72,36 @@ class Line:
 class Statement:
     buyer: str
     lines: list[Line] = field(default_factory=list)
+    fee_pct: int = 20
+    request_id: str | None = None
+    issued_at: str = ""
+    idempotent_replay: bool = False
 
     @property
     def gross_cents(self) -> int:
         return sum(l.gross_cents for l in self.lines)
+
+    @property
+    def platform_cents(self) -> int:
+        return sum(l.platform_cents for l in self.lines)
+
+    @property
+    def developer_cents(self) -> int:
+        return sum(l.developer_cents for l in self.lines)
+
+    def to_dict(self) -> dict:
+        """JSON 与 Markdown 共用这一份数：两边各算一次迟早分叉。"""
+        return {
+            "buyer": self.buyer,
+            "fee_pct": self.fee_pct,
+            "gross_cents": self.gross_cents,
+            "platform_cents": self.platform_cents,
+            "developer_cents": self.developer_cents,
+            "request_id": self.request_id,
+            "issued_at": self.issued_at,
+            "idempotent_replay": self.idempotent_replay,
+            "rows": [asdict(l) for l in self.lines],
+        }
 
     def to_markdown(self, fee_pct: int) -> str:
         rows = "\n".join(
@@ -139,4 +179,30 @@ class Ledger:
             total_fee += platform
             st.lines.append(Line(agent_id, developers.get(agent_id, "unknown"), calls, units,
                                  gross, platform, gross - platform))
+        return st
+
+    def issue_statement(self, buyer: str, developers: dict[str, str],
+                        fee_pct: int = 20, request_id: str | None = None) -> Statement:
+        """出账。给了 request_id 就是「变更」：按 (buyer, request_id) 落快照，
+        同一个 id 再来原样回放（不回炉重算，也不吃新用量）。没有 request_id 只读。"""
+        if request_id is not None:
+            row = self.conn.execute(
+                "SELECT fee_pct,gross_cents,platform_cents,developer_cents,rows_json,ts "
+                "FROM statements WHERE buyer=? AND request_id=?",
+                (buyer, request_id)).fetchone()
+            if row is not None:
+                return Statement(buyer, [Line(**d) for d in json.loads(row[4])],
+                                 fee_pct=row[0], request_id=request_id,
+                                 issued_at=row[5], idempotent_replay=True)
+        st = self.statement(buyer, developers, fee_pct)
+        st.fee_pct, st.request_id, st.issued_at = fee_pct, request_id, self._now
+        if request_id is not None:
+            data = st.to_dict()
+            self.conn.execute(
+                "INSERT INTO statements(request_id,buyer,fee_pct,gross_cents,platform_cents,"
+                "developer_cents,rows_json,ts) VALUES(?,?,?,?,?,?,?,?)",
+                (request_id, buyer, fee_pct, data["gross_cents"], data["platform_cents"],
+                 data["developer_cents"], json.dumps(data["rows"], ensure_ascii=False),
+                 self._now))
+            self.conn.commit()
         return st

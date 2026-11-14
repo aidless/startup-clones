@@ -129,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         print("\n与基线不一致：")
         for line in drift:
             print(f"  - {line}")
+    elif args.baseline:
+        # 成功时也要有一行 —— pre-push 钩子把输出写进日志，全静默时分不清
+        # 「一致」与「根本没比」。
+        print(f"\n基线一致：{len(rows)} 份读数与 {args.baseline} 相同"
+              f"（parser {parser_digest()}）")
     print(f"\n矩阵：{summary['ok']}/{summary['total']} 份解析成功"
           f"（其中有 XBRL {summary['with_facts']} 份）；最少章节 {summary['min_sections']}、"
           f"最少段落 {summary['min_chunks']}")

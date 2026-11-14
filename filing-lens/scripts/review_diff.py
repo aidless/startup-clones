@@ -26,10 +26,19 @@ from filinglens.answer import RESPECTIVELY_RE, headcount_number  # noqa: E402
 # 「$145.10 billion」/「36.3B」/「1,204.3 million」
 _MONEY = re.compile(
     r"\$?\s?([0-9][0-9,]*\.?[0-9]*)\s*(billion|million|B\b|M\b|trillion)", re.I)
+# 小盘 10-K 常年按整元记账、不带量级词（PAID INC 原文 "$ 20,690,000"）。只认带
+# million/billion 的写法时，这类公司整份 10-K 的金额一个都读不到 —— 检查照跑、结论
+# 是「正文没有同量级表述」，对小盘客户（我们的全部目标客户）等于空转。
+_MONEY_PLAIN = re.compile(r"\$\s?([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?)")
 _SCALE = {"billion": 1e9, "b": 1e9, "million": 1e6, "m": 1e6, "trillion": 1e12}
 _SENT_SPLIT = re.compile(r"(?<=[.;])\s+(?=[A-Z(])")
 
 CASH_TAG = "CashAndCashEquivalentsAtCarryingValue"
+# 不少小盘公司在某个年度之后改用「含受限现金」的合并标签。只认前一个标签时，
+# `_latest` 会取到好几年前的余额，再和今年的经营现金流相减（XERIANT 实测：
+# 2026 的 CFO 减 2021 的现金，印出「差 1.8×」，两个年份的数相减没有含义）。
+CASH_TAGS = (CASH_TAG,
+             "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents")
 CFO_TAG = "NetCashProvidedByUsedInOperatingActivities"
 REV_TAGS = ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet")
 
@@ -66,6 +75,12 @@ def _money_values(text: str) -> list[tuple[float, str]]:
         except ValueError:
             continue
         out.append((v * _SCALE.get(unit, 1.0), m.group(0).strip()))
+    for m in _MONEY_PLAIN.finditer(text):
+        try:
+            v = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        out.append((v, m.group(0).strip()))
     return out
 
 
@@ -74,6 +89,18 @@ def _latest(conn, tag: str) -> facts.Fact | None:
         "SELECT tag, fy, val, unit, form, end FROM facts WHERE tag=? AND unit LIKE 'USD%' "
         "ORDER BY fy DESC, end DESC LIMIT 1", (tag,)).fetchall()
     return facts.Fact(**dict(rows[0])) if rows else None
+
+
+def _latest_at(conn, tags: tuple[str, ...], fy: int) -> tuple[facts.Fact, str] | None:
+    """只取指定财年的那一行，并返回命中的标签（标签名要写进出处）。"""
+    for tag in tags:
+        rows = conn.execute(
+            "SELECT tag, fy, val, unit, form, end FROM facts "
+            "WHERE tag=? AND fy=? AND unit LIKE 'USD%' ORDER BY end DESC LIMIT 1",
+            (tag, fy)).fetchall()
+        if rows:
+            return facts.Fact(**dict(rows[0])), tag
+    return None
 
 
 def _series(conn, tag: str) -> list[facts.Fact]:
@@ -97,15 +124,26 @@ def _sents(chunks, keyword: str, limit: int = 400):
 
 def check_cash_caliber(f: corpus.Filing, rep: Report) -> None:
     """1. 现金流量口径：正文说 operating cash flow 时，数字对的是哪个科目。"""
-    cfo, cash = _latest(f.conn, CFO_TAG), _latest(f.conn, CASH_TAG)
-    if not (cfo and cash):
-        rep.skipped.append(("现金流量口径", f"facts 里缺 {CFO_TAG} 或 {CASH_TAG}"))
+    cfo = _latest(f.conn, CFO_TAG)
+    if not cfo:
+        rep.skipped.append(("现金流量口径", f"facts 里缺 {CFO_TAG}"))
         return
+    hit = _latest_at(f.conn, CASH_TAGS, cfo.fy)
+    if not hit:
+        rep.skipped.append((
+            "现金流量口径",
+            f"经营现金流 FY{cfo.fy} 有值，但同年没有现金及等价物标签"
+            f"（查过 {len(CASH_TAGS)} 个标签名）；不同年份的余额与流量相减得到的倍数没有含义，"
+            f"所以不做跨年比较"))
+        return
+    cash, cash_tag = hit
+    # 不再印「差 N×」：经营现金流是期间流量、现金及等价物是期末存量，
+    # 两者相除既不是覆盖率也不是周转率（XERIANT 印出「差 10.0×」，只会让人以为算错了）。
     rep.add(Finding("现金流量口径",
-                    f"两个科目都在：经营现金流 {cfo.fy} = {facts.fmt_money(cfo.val)}，"
-                    f"现金及等价物 {cash.fy} = {facts.fmt_money(cash.val)}"
-                    f"（差 {abs(cfo.val - cash.val) / max(cash.val, 1):.1f}×）",
-                    f"XBRL:{CFO_TAG}@{cfo.fy} / XBRL:{CASH_TAG}@{cash.fy}",
+                    f"两个科目都在：经营现金流 FY{cfo.fy} = {facts.fmt_money(cfo.val)}"
+                    f"（期间流量），现金及等价物 FY{cash.fy} = {facts.fmt_money(cash.val)}"
+                    f"（期末存量）",
+                    f"XBRL:{CFO_TAG}@{cfo.fy} / XBRL:{cash_tag}@{cash.fy}",
                     "正文若用「cash flow」「cash generated」指前者，注意别被后者的标签带偏",
                     "look"))
     # 只在「金额直接跟在科目名后面」时判：Broadcom 的
@@ -176,7 +214,24 @@ def check_headcount_year(f: corpus.Filing, rep: Report) -> None:
                                 ref, "与审计底稿/上年披露核对人数与口径（FTE 还是总人数）", "info"))
                 break
         else:
-            rep.skipped.append(("员工数", "本份 10-K 未出现可解析的员工数句式"))
+            # 办学/医疗类公司不一定用 "employees"，但人数照样在正文里披露
+            # （Legacy Education 原文：「we had approximately 120 full-time faculty …」）。
+            # 只扫含 employees 的句子会把这句判成「没有披露」，等于漏掉一手事实。
+            alt = re.compile(
+                r"\b(?:approximately\s+|about\s+|over\s+)?([0-9][0-9,]{0,6})\s+"
+                r"(?:full-time\s+|part-time\s+|full time\s+|part time\s+)?"
+                r"(faculty|staff|personnel|team members|associates|workers)\b", re.I)
+            for sent, ref in _sents(f.chunks, "faculty", limit=40):
+                m = alt.search(sent)
+                if m:
+                    rep.add(Finding("员工数",
+                                    f"正文披露 {m.group(1)} 名 {m.group(2)}"
+                                    f"（不是 employees 口径，核对时注意 FTE/兼职是否分开算）",
+                                    ref, "与底稿人数及上年披露核对口径（FTE / 全职 / 兼职）",
+                                    "info"))
+                    break
+            else:
+                rep.skipped.append(("员工数", "本份 10-K 未出现含 employees/faculty/staff 的人数句式"))
 
 
 def check_yoy_negative_base(f: corpus.Filing, rep: Report) -> None:
@@ -194,6 +249,17 @@ def check_yoy_negative_base(f: corpus.Filing, rep: Report) -> None:
                             f"按绝对值算「变化 {pct:+.1f}%」，这个百分比没有经济含义",
                             f"XBRL:{tag}@{prev.fy}→@{cur.fy}",
                             "正文若给出百分比变化，核对它是按绝对值还是按带符号基数算的",
+                            "look"))
+        elif (prev.val > 0) != (cur.val > 0):
+            # 基数跨零：447,643 → -53,171 按公式算得出 -111.9%，但这个数没有任何含义
+            # （正文也不会这么写），照抄给复核员去「核对」，等于让他白跑一趟。
+            rep.add(Finding("同比口径",
+                            f"{label} {prev.fy} = {facts.fmt_money(prev.val)}、"
+                            f"{cur.fy} = {facts.fmt_money(cur.val)}：基数跨零"
+                            f"（由{'正转负' if prev.val > 0 else '负转正'}），"
+                            f"百分比变化无含义，只能看绝对额",
+                            f"XBRL:{tag}@{prev.fy}→@{cur.fy}",
+                            "核对正文是怎么描述这次变化的（通常写「转为净流出」而不是百分比）",
                             "look"))
         elif prev.val > 0:
             pct = (cur.val - prev.val) / prev.val * 100
@@ -240,6 +306,14 @@ def check_text_percent(f: corpus.Filing, rep: Report) -> None:
             continue
         prev, cur = series[-2], series[-1]
         if prev.val == 0:
+            continue
+        if (prev.val > 0) != (cur.val > 0):
+            # 基数跨零时百分比没有含义（447,643 → -53,171 算得 -111.9%）。
+            # 拿这个数去否定正文的「decreased」，是用坏尺判客户错（PAID INC 实测）。
+            rep.skipped.append((f"正文百分比（{label}）",
+                                f"{prev.fy}→{cur.fy} 基数跨零"
+                                f"（{facts.fmt_money(prev.val)} → {facts.fmt_money(cur.val)}），"
+                                f"百分比不可比，本项不做比对"))
             continue
         actual = (cur.val - prev.val) / abs(prev.val) * 100
         found = 0
@@ -399,14 +473,15 @@ def build(cik: str, data_dir: Path, inject: tuple[str, str] | None = None) -> Re
     return rep
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("cik")
     ap.add_argument("--data", default=str(ROOT / "data"))
     ap.add_argument("--out")
+    ap.add_argument("--pdf", help="同时导出一份 PDF（客户收到的是 PDF 不是 markdown）")
     ap.add_argument("--inject", nargs=2, metavar=("OLD", "NEW"),
                     help="演示用：在临时副本上改掉一处文本，验证检查能抓到")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     rep = build(a.cik, Path(a.data), tuple(a.inject) if a.inject else None)
     rep.injected = tuple(a.inject) if a.inject else None
     text = render(rep)
@@ -415,7 +490,16 @@ def main() -> None:
         print(f"written: {a.out}")
     else:
         print(text)
+    if a.pdf:
+        import render_pdf
+        try:
+            path = render_pdf.render_pdf(text, a.pdf, title=rep.entity or a.cik)
+        except render_pdf.PDFUnavailable as exc:
+            print(f"PDF 没有导出：{exc}", file=sys.stderr)
+            return 2
+        print(f"written: {path}（{path.stat().st_size} 字节）")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

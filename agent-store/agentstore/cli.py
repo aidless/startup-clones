@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from . import __version__
@@ -25,9 +26,9 @@ def _handler(name: str):
     return run
 
 
-def cmd_demo(_args: argparse.Namespace) -> int:
-    reg = Registry()
-    ledger = Ledger()
+def cmd_demo(args: argparse.Namespace) -> int:
+    reg = Registry(args.db)
+    ledger = Ledger(args.db)
     for m, dev in ((INVOICE_BOT, "northwind-labs"), (RESEARCH, "quill-research"), (CFO, "ledgerly")):
         reg.publish(m, dev)
         ledger.register(m)
@@ -69,6 +70,34 @@ def cmd_demo(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _developer(value: str) -> tuple[str, str]:
+    agent, sep, dev = value.partition("=")
+    if not sep or not agent or not dev:
+        raise argparse.ArgumentTypeError(f"--developer 要 agent=dev 形式，收到 {value!r}")
+    return agent, dev
+
+
+def _fee_pct(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--fee-pct 要整数，收到 {value!r}")
+    if not 0 <= n <= 100:
+        raise argparse.ArgumentTypeError(f"--fee-pct 必须在 0..100，收到 {n}")
+    return n
+
+
+def cmd_statement(args: argparse.Namespace) -> int:
+    st = Ledger(args.db).issue_statement(
+        args.buyer, dict(args.developer or ()), fee_pct=args.fee_pct, request_id=args.request_id)
+    if args.json:
+        json.dump(st.to_dict(), sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+    else:
+        print(st.to_markdown(st.fee_pct))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="agentstore",
@@ -77,7 +106,20 @@ def build_parser() -> argparse.ArgumentParser:
                     version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", title="子命令")
     d = sub.add_parser("demo", help="跑完整演示（缺省子命令）：3 个 agent 上架 → 6 次调用 → 出账单")
+    d.add_argument("--db", default=":memory:",
+                   help="把发布与用量记进这个 sqlite 文件（默认 :memory:，跑完即弃）")
     d.set_defaults(func=cmd_demo)
+
+    s = sub.add_parser("statement", help="出账：按 buyer 聚合 usage 并分账（--json 给机器读）")
+    s.add_argument("--db", required=True, help="商店库（sqlite 文件）")
+    s.add_argument("--buyer", required=True, help="买家 id")
+    s.add_argument("--fee-pct", type=_fee_pct, default=20, help="平台抽成百分比 0..100（默认 20）")
+    s.add_argument("--developer", action="append", type=_developer, metavar="AGENT=DEV",
+                   help="agent→开发者归属，可重复；没给的记 unknown")
+    s.add_argument("--request-id", default=None,
+                   help="出账幂等键（scope 为 buyer）：重复时原样回放首次快照")
+    s.add_argument("--json", action="store_true", help="stdout 输出单个 JSON 对象")
+    s.set_defaults(func=cmd_statement)
     ap.set_defaults(func=cmd_demo)     # 不带子命令时保持旧行为：直接跑 demo
     return ap
 

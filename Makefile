@@ -3,7 +3,7 @@
 
 PROJECTS := geo-radar filing-lens audit-loop cruxline agent-inbox agent-store console
 
-.PHONY: test demo clean matrix matrix-record e2e
+.PHONY: test demo clean matrix matrix-record e2e hooks
 
 test:
 	@for p in $(PROJECTS); do \
@@ -18,6 +18,10 @@ matrix:
 # 改过解析器后重记基线（会覆盖 docs/corpus-matrix.json，再跑 make matrix 复核）
 matrix-record:
 	python3 scripts/corpus_matrix.py --record docs/corpus-matrix.json
+
+# 挂上版本化钩子（pre-push 跑语料矩阵）
+hooks:
+	sh scripts/install_hooks.sh
 
 # 七个项目端到端串联（真跑子进程，约 40 秒）
 e2e:

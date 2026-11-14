@@ -57,6 +57,61 @@ python -m agentstore.cli        # 3 个 agent 上架 → 最小授权 → 6 次�
 
 分成：`platform = round(gross × fee%)`，**余数归开发者** —— 舍入误差不能让平台白赚钱，否则开发者对账永远差几分钱（`test_split_rounding_favours_developer` 钉住这条）。
 
+## 出账：`statement`（人读 + `--json`）
+
+`demo` 默认把库建在 `:memory:`，跑完即弃。要看账单，让它落盘，再对那个文件出账：
+
+```bash
+rm -f /tmp/agentstore.db          # demo 每次都重新发布 3 个 agent，重跑前先删库
+python3 -m agentstore.cli demo --db /tmp/agentstore.db
+
+# 人读：Markdown 账单（与 demo 里那份同一个渲染器）
+python3 -m agentstore.cli statement --db /tmp/agentstore.db --buyer acme \
+  --developer invoice-bot=northwind-labs --developer deck-research=quill-research \
+  --developer cfo-copilot=ledgerly --fee-pct 20
+
+# 机器读：stdout 整体就是一个 JSON 对象
+python3 -m agentstore.cli statement --db /tmp/agentstore.db --buyer acme \
+  --developer invoice-bot=northwind-labs --developer deck-research=quill-research \
+  --developer cfo-copilot=ledgerly --request-id st-2026-11 --json
+```
+
+真实输出（`--json`，金额单位是整数美分）：
+
+```json
+{
+  "buyer": "acme",
+  "fee_pct": 20,
+  "gross_cents": 1000,
+  "platform_cents": 200,
+  "developer_cents": 800,
+  "request_id": "st-2026-11",
+  "issued_at": "2026-11-12T00:00:00Z",
+  "idempotent_replay": false,
+  "rows": [
+    {"agent_id": "cfo-copilot", "developer": "ledgerly", "calls": 1, "units": 1,
+     "gross_cents": 900, "platform_cents": 180, "developer_cents": 720},
+    {"agent_id": "deck-research", "developer": "quill-research", "calls": 1, "units": 2400,
+     "gross_cents": 90, "platform_cents": 18, "developer_cents": 72},
+    {"agent_id": "invoice-bot", "developer": "northwind-labs", "calls": 2, "units": 2,
+     "gross_cents": 10, "platform_cents": 2, "developer_cents": 8}
+  ]
+}
+```
+
+`platform_cents + developer_cents == gross_cents` 恒成立，逐行同样成立，且合计由 `rows`
+求和得出（`Statement.to_dict`，`meter.py:92`）—— JSON 与 Markdown 共用这一份数。
+`--developer` 没给的 agent 记 `unknown`：`usage` 表只记 measure，不记归属，商店不瞎猜。
+退出码：`0` 跑通，`2` 用法错（缺 `--db`/`--buyer`、`--fee-pct` 不在 0..100、`--developer` 不是 `agent=dev`）。
+
+**幂等键：`--request-id` 重复时回放首次快照，不报错。** 键 scope 到 buyer（`PRIMARY KEY (buyer, request_id)`，
+`meter.py:35`）。理由：同一个 id 在系统里已有两处同义解释 —— `usage` 表重投返回原记录
+（`meter.py:145`）、`Runtime._done` 重投回放执行结果（`runtime.py:55`）；再让第三种解释
+（报错）出现，调用方就没法凭 id 推理「这次会不会算钱」。代价是快照会**过期**：首次出账后新增的
+用量、改动的 `--fee-pct` 都不生效（回放连 `fee_pct` 一起回），拿到的可能是旧数；要按新口径出账
+必须换新 id。所以 `idempotent_replay` 必须透出，让调用方能区分「回放」与「重算」。
+另一种选择（报错）会把客户端重试变成失败，代价落在可用性上，与 `usage` 的既有语义打架。
+
 ## 架构
 
 ```
@@ -65,7 +120,7 @@ registry.py  publish（不可覆盖）/ yank / latest / install（最小授权�
 runtime.py   resolve → status → gate(权限) → execute → meter（失败与拦截都不计费）
 meter.py     Ledger：request_id 幂等、三种定价、Statement 分账
 fixtures.py  invoice-bot(按次) / deck-research(按 token) / cfo-copilot(订阅)
-cli.py       demo
+cli.py       demo / statement（人读 Markdown 或 --json）
 ```
 
 ## 路线图
@@ -79,9 +134,14 @@ cli.py       demo
 
 ## 已知边界
 
-- **金额用整数分，但账单只覆盖记进 `usage` 表的事件**：`Pricing.cents_per_unit` 与 `usage.cents` 都是整数（`manifest.py:32`、`meter.py:19`），展示时才用 `Decimal` 转美元（`meter.py:28`）。被权限闸拦下、handler 抛错、以及同 `(buyer, request_id)` 的重投都不会写 usage（`runtime.py:71`、`runtime.py:81`、`runtime.py:55`），所以账单里没有这些调用；反过来，绕过 `Runtime` 直接调 `Ledger.record` 的用量不受任何前置校验约束。整数分也做不了「$0.000003/token」这种粒度，真实系统应按 micro-cent 存整数。
+- **出账快照落成即冻结，`issued_at` 不是墙钟**：给了 `--request-id` 时，`gross/platform/developer/rows`
+  连同 `fee_pct` 一起写进 `statements` 表（`meter.py:184`），此后同一 `(buyer, request_id)` 一律回放
+  （`meter.py:191`）—— 新增用量、新的 `--fee-pct` 都看不到；要重算必须换 id。`issued_at` 取 `Ledger._now`
+  （`meter.py:122` 默认硬编码 `2026-11-12T00:00:00Z`），是注入的测试时钟而非真实时间，接真系统时
+  必须注入墙钟，否则所有快照的时间戳都相同。
+- **金额用整数分，但账单只覆盖记进 `usage` 表的事件**：`Pricing.cents_per_unit` 与 `usage.cents` 都是整数（`manifest.py:32`、`meter.py:20`），展示时才用 `Decimal` 转美元（`meter.py:42`）。被权限闸拦下、handler 抛错、以及同 `(buyer, request_id)` 的重投都不会写 usage（`runtime.py:71`、`runtime.py:81`、`runtime.py:55`），所以账单里没有这些调用；反过来，绕过 `Runtime` 直接调 `Ledger.record` 的用量不受任何前置校验约束。整数分也做不了「$0.000003/token」这种粒度，真实系统应按 micro-cent 存整数。
 - **版本归属以首次发布为准，不能转移**：`publish` 用 `INSERT OR IGNORE` 写入 `agents.developer`（`registry.py:77`），此后的发布者必须与首发布者一致（`registry.py:73`），没有转让或迁移归属的 API；`yank` 只改状态、不删版本（`registry.py:86`），买家已有安装仍保留记录。
-- **分成先按总额取整、再逐行分配、末行兜底**：`statement` 先算 `target_fee`（`meter.py:130`），中间行各自取整并被夹在剩余额度内，最后一行拿走全部余额（`meter.py:132`），保证 `sum(platform) + sum(developer) == gross`。代价是每行金额依赖行顺序，不能对单行独立复算；抽成比例是账单参数（`statement(..., fee_pct=20)`）而不是合同。
+- **分成先按总额取整、再逐行分配、末行兜底**：`statement` 先算 `target_fee`（`meter.py:170`），中间行各自取整并被夹在剩余额度内，最后一行拿走全部余额（`meter.py:174`），保证 `sum(platform) + sum(developer) == gross`。代价是每行金额依赖行顺序，不能对单行独立复算；抽成比例是账单参数（`statement(..., fee_pct=20)`）而不是合同。
 - **registry 是单文件 SQLite，没有并发写保护**：`Registry` 直接 `sqlite3.connect(db_path)`（`registry.py:55`），默认 `:memory:`，未开 WAL、未设 `busy_timeout`、也没有进程内锁或重试；多进程/多线程同时 `publish`/`install` 会撞上 `database is locked` 或丢写。
 - **没有真实支付网络对接**：整个包没有任何网络请求或支付 SDK 调用。`payment.charge` 只是 `KNOWN_PERMISSIONS` 里的一个权限字符串（`manifest.py:19`），账单是本地 `usage` 表的聚合与 Markdown 渲染（`meter.py:119`），扣款、退款、对账、发票都留给外部系统。
 - **digest 是内容哈希，不是签名**：`digest()` 只做 `sha256(canonical)`（`manifest.py:75`），能查出「同版本内容改了」，但证明不了「这份清单是开发者发的」；签名、执行隔离仍在路线图（`handler` 目前是进程内回调，`runtime.py:80`）。
