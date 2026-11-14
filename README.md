@@ -2,11 +2,11 @@
 
 六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**318 个测试，0 个 mock 掉的断言，全部离线可跑。**
+**331 个测试，0 个 mock 掉的断言，全部离线可跑。**
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 七个子项目逐个跑，共 318 passed
+make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 331 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 ```
 
@@ -90,7 +90,8 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-12）
 
-- 测试：**318 passed**（geo 27 / filing 103 / audit 36 / crux 52 / inbox 47 / store 42 / console 11）
+- 测试：**331 passed**（geo 31 / filing 103 / audit 40 / crux 52 / inbox 47 / store 42 / console 11 / go-to-market 5）
+  根目录 `python3 -m pytest` 一条命令跑完；`make test` 仍是逐项目跑（七个子项目）。
 - 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
   已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——
   测试写的是「设计时以为会发生什么」，复现测试写的是「真实输入会发生什么」
