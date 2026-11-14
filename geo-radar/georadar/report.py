@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .metrics import BrandStats, citation_share, gap_report, rank_distribution
 from .models import Answer, Mention
+from .stats import proportion_ci
 
 HTML_CSS = """
 :root{--ink:#111;--muted:#666;--line:#e6e6e6;--hot:#c0392b;--ok:#1e8449}
@@ -55,10 +56,11 @@ def markdown_report(
     ]
     for name, s in sorted(stats.items(), key=lambda kv: -kv[1].mentions):
         rate = s.prompts_seen / prompts_total if prompts_total else 0
+        lo, hi = proportion_ci(s.prompts_seen, prompts_total) if prompts_total else (0.0, 0.0)
         mark = " ←" if name == brand else ""
         lines.append(
-            f"| {name}{mark} | {s.mentions} | {_pct(rate)} | {_pct(s.share_of_voice)} | "
-            f"{s.avg_position} | {s.sentiment:+.2f} |"
+            f"| {name}{mark} | {s.mentions} | {_pct(rate)} [{_pct(lo)}, {_pct(hi)}] | "
+            f"{_pct(s.share_of_voice)} | {s.avg_position} | {s.sentiment:+.2f} |"
         )
     if not stats:
         lines.append("| （无提及） | 0 | 0.0% | 0.0% | - | 0.00 |")
@@ -110,6 +112,8 @@ def markdown_report(
         "3. 抽查 5 条未被提及的回答，确认是产品事实缺失还是模型知识过期。",
         "",
         f"> 数据口径：提及 = 回答正文中品牌名的首次出现；声量份额 = 品牌提及数 / 全部品牌提及数。",
+        "> 出现率方括号内是对提示词级 0/1 序列做 bootstrap（2000 次重采样，95%）的区间；"
+        f"样本只有 {prompts_total} 条时区间本就宽，别把中点当精确值报给老板。",
     ]
     return "\n".join(lines)
 

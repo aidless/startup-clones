@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .stats import set_fingerprint, wilson_interval
+
 
 @dataclass
 class RegressReport:
@@ -17,10 +19,21 @@ class RegressReport:
     still_failing: list[str] = field(default_factory=list)
     still_passing: int = 0
     dropped: list[str] = field(default_factory=list)       # 基线里有、这次没跑
+    n: int = 0                                             # 参与比较的用例数
+    fingerprint: str = ""                                  # 这批用例的指纹（顺序无关）
 
     @property
     def delta(self) -> float:
         return round(self.after_rate - self.before_rate, 4)
+
+    @property
+    def intervals(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        """两次运行的 Wilson 区间。n=0 时返回 (0,1)/(0,1)（不可判）。"""
+        if self.n <= 0:
+            return (0.0, 1.0), (0.0, 1.0)
+        before = wilson_interval(round(self.before_rate * self.n), self.n)
+        after = wilson_interval(round(self.after_rate * self.n), self.n)
+        return before, after
 
     @property
     def verdict(self) -> str:
@@ -35,8 +48,12 @@ class RegressReport:
         return "neutral"
 
     def to_markdown(self) -> str:
+        before, after = self.intervals
         lines = [
             f"通过率 {self.before_rate:.1%} → {self.after_rate:.1%}（{self.delta:+.1%}）",
+            f"95% CI：{self.before_rate:.1%} [{before[0]:.1%}, {before[1]:.1%}] → "
+            f"{self.after_rate:.1%} [{after[0]:.1%}, {after[1]:.1%}] · n={self.n}"
+            f" · 用例集 {self.fingerprint or '（未记录）'}",
             f"结论：**{self.verdict}** · 回归 {len(self.regressions)} · 修复 {len(self.fixes)}",
         ]
         if self.dropped:
@@ -59,6 +76,8 @@ def diff(baseline: dict[str, bool], current: dict[str, bool]) -> RegressReport:
     regressions = [i for i in ids if baseline[i] and not current[i]]
     fixes = [i for i in ids if not baseline[i] and current[i]]
     return RegressReport(
+        n=len(ids),
+        fingerprint=set_fingerprint(ids),
         before_rate=round(sum(baseline[i] for i in ids) / len(ids), 4),
         after_rate=round(sum(current[i] for i in ids) / len(ids), 4),
         regressions=regressions,

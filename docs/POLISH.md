@@ -29,7 +29,7 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
 ## 现在的状态
 
 - 七个项目 **硬项全过**（`7 个项目硬项全过。`）
-- `python3 -m pytest` → **331 passed**（geo 31 / filing 103 / audit 40 / crux 52 / inbox 47 / store 42 / console 11 / go-to-market 5）
+- `python3 -m pytest` → **331 passed**（打磨完成时；借入外部机制后为 351，见 `docs/BORROWED.md`）
 - 这根命令以前跑不起来：`python3 -m pytest` 会把仓库根放进 `sys.path`，而 `cruxline/`（目录）与
   `cruxline/cruxline/`（真包）同名，`import cruxline` 先命中那个没有 `__init__.py` 的目录，
   子项目测试全部 ImportError；同时七个项目各自 `pyproject` 里的 `pythonpath=["."]` 在根目录不生效。

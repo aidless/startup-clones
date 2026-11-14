@@ -7,6 +7,7 @@ email 是 MIME 头、WhatsApp 是 entry[].changes[].value.messages[]），
 from __future__ import annotations
 
 import re
+from email.utils import getaddresses
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
@@ -54,14 +55,15 @@ def parse_slack(payload: dict) -> Inbound:
 def sender_address(frm: str) -> str:
     """从 From 头里取真正的地址（addr-spec），不取显示名。
 
-    规则：取最后一个尖括号内的串；没有尖括号才退回正则搜第一个邮箱。
-    测试钉住两个方向：伪装写法必须解析到 attacker@evil.example；
-    正常写法 "Bob <bob@partner.example>" 必须仍是 bob@partner.example。
+    用标准库按 RFC 5322 解析（docs/BORROWED.md B-4）：自造正则会把注释里的邮箱
+    当发件人 —— `From: (support@acme.example) bob@partner.example` 会解析成内部域名。
+    From 只允许一个地址；出现多个时取最后一个（与「外层尖括号即真实地址」同一立场，
+    伪装写法 `"Alice <alice@acme.example>" <attacker@evil.example>` 因此仍落到 attacker）。
+    解析不出地址时退回正则，再不行原样返回（宁可标成可疑，也不要静默变成内部同事）。
     """
-    for inner in reversed(ANGLE_RE.findall(frm)):
-        m = EMAIL_RE.search(inner)
-        if m:
-            return m.group(0)
+    parsed = [addr for _, addr in getaddresses([frm]) if addr]
+    if parsed:
+        return parsed[-1].strip()
     m = EMAIL_RE.search(frm)
     return m.group(0) if m else frm.strip()
 

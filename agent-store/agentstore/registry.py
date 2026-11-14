@@ -118,6 +118,13 @@ class Registry:
 
     def install(self, buyer: str, agent_id: str, granted: tuple[str, ...] | None = None) -> Version:
         v = self.latest(agent_id)
+        # 摘要的唯一用途就是在正文被动过时说话（npm integrity / sigstore 的同一立场）：
+        # 版本表同时存 digest 与 manifest，只读 manifest 不复核，等于摘要从不生效。
+        actual = v.manifest.digest()
+        if actual != v.digest:
+            raise RegistryError(
+                f"{agent_id}@{v.version} 清单内容与发布摘要不符"
+                f"（发布 {v.digest[:12]}，当前 {actual[:12]}）；拒绝安装")
         perm = v.manifest.permissions
         granted = tuple(granted if granted is not None else perm)
         extra = [g for g in granted if g not in perm]
