@@ -56,9 +56,14 @@ class Response:
     text: str
     citations: list[Citation] = field(default_factory=list)
     confidence: float = 0.0
+    # 出处之外必须说清楚的话（目前只有一句：摘录里的数字来自正文，不是 XBRL 口径）。
+    # 存在这个字段而不是拼进 text：调用方要能分别渲染/审计，混在正文里等于没说。
+    note: str = ""
 
     def render(self) -> str:
         head = f"[{self.status}] {self.text}"
+        if self.note:
+            head = f"{head}\n注：{self.note}"
         if not self.citations:
             return head
         lines = [head, "", "出处："]
@@ -88,6 +93,22 @@ def has_quantity(sentence: str) -> bool:
     return False
 
 
+def body_numbers(sentence: str) -> list[str]:
+    """正文里的量（年份不算），与 has_quantity 同一口径；用来标注「这个数字不来自 XBRL」。"""
+    out = []
+    for raw in re.findall(r"\d[\d,.]*%?", sentence):
+        if YEAR_RE.match(raw.strip(".,%")):
+            continue
+        out.append(raw)
+    return out
+
+
+# 摘录里带正文数字时的说明。文本通道可以摘原文，但不能让人以为那些数字出自 XBRL——
+# 「文本通道一律不许出数字」这句话本身是假的（10-K 的定性段落里就有 48% 这种数），
+# 真的契约是：数字只有 XBRL 通道能作为**答案**，正文数字必须写明来源。
+BODY_NUMBER_NOTE = "摘录中的 {} 来自正文，不是 XBRL 口径"
+
+
 QUANTITY_RE = re.compile(r"多少|几个|几位|几名|多少人|how many|number of|how much", re.I)
 
 # 「有多少员工」这类问题，合格的证据只有一种句子形态：数字 + 员工。
@@ -96,10 +117,17 @@ QUANTITY_RE = re.compile(r"多少|几个|几位|几名|多少人|how many|number
 # 人数陈述的形态比想象的多：\"1.5 million employees\"（Amazon）、
 # \"2.1 million associates\"（Walmart 不说 employees）、\"42,000 employees\"。
 # 只认三位以上整数会漏掉前两种，实测 20 家里漏 4 家。
+# 单位还必须含 workers/staff/headcount：Qualcomm 写的是
+# \"57,000 full-time, part-time and temporary workers\"，只认 employees/people 就整句漏掉。
+_HEADCOUNT_UNIT = (r"(?:employees|people|associates|team members|personnel|workers|staff"
+                   r"|headcount)")
+# 数字与单位之间允许的人数修饰语（\"full-time, part-time and temporary\"）
+_HEADCOUNT_QUALIFIERS = (r"(?:(?:full[- ]time|part[- ]time|temporary|seasonal|permanent"
+                         r"|contract|hourly|salaried|and|or|,)\s*)*")
 HEADCOUNT_RE = re.compile(
     r"(\d[\d,]*(?:\.\d+)?(?:\s*(?:million|thousand))?)\s+"
-    r"(?:(?:full[- ]time|part[- ]time)\s+)*(?:and\s+part[- ]time\s+)?(?:equivalent\s+)?"
-    r"(?:employees|people|associates|team members|personnel)", re.I)
+    + _HEADCOUNT_QUALIFIERS +
+    r"(?:equivalent\s+)?" + _HEADCOUNT_UNIT, re.I)
 
 # \"65,900 and 69,700 employees, respectively\" —— 紧挨着 employees 的是**旧**数字。
 RESPECTIVELY_RE = re.compile(
@@ -184,7 +212,7 @@ def wants_headcount_context(question: str) -> bool:
 
 
 HEADCOUNT_QUERY_RE = re.compile(
-    r"\b(?:employees?|headcount|workforce|associates|personnel)\b", re.I)
+    r"\b(?:employees?|headcount|workforce|associates|personnel|workers?|staff)\b", re.I)
 
 
 class Answerer:
@@ -297,7 +325,7 @@ class Answerer:
                 break
         if best is None:
             return Response(kind="excerpt", status="insufficient_evidence",
-                            text=REFUSAL + "（全文没有「N 名员工」这类陈述，无法给出人数）",
+                            text=REFUSAL + "（正文未匹配到「N + 人数单位」这类句式，无法给出人数）",
                             citations=[])
         _, sent, ref = best
         return Response(kind="excerpt", status="ok", text=sent,
@@ -358,7 +386,7 @@ class Answerer:
             if wants_headcount:
                 # 宁可不答，也不要拿"员工里有 80% 是技术岗"当员工人数。
                 return Response(kind="excerpt", status="insufficient_evidence",
-                                text=REFUSAL + "（全文没有「N 名员工」这类陈述，无法给出人数）",
+                                text=REFUSAL + "（正文未匹配到「N + 人数单位」这类句式，无法给出人数）",
                                 citations=[])
             quote, ref = best.chunk.text[:400], best.chunk.ref
         else:
@@ -368,10 +396,20 @@ class Answerer:
             quote = " ".join(s[3] for s in picked)
             ref = scored[0][4]
 
+        nums = body_numbers(quote)
+        if nums and wants_number:
+            # 问「多少」却没走到 XBRL：正文里的 48% 不能拿来当答案。
+            # 以前这里会直接返回带数字的摘录，等于把「文本通道不出数字」的契约作废。
+            return Response(
+                kind="excerpt", status="insufficient_evidence",
+                text=REFUSAL + f"（正文里有 {'、'.join(nums[:3])} 这类数字，但本题在问数量："
+                               "数字只从 XBRL 读，正文摘录不代答）",
+                citations=[])
+        note = BODY_NUMBER_NOTE.format("、".join(nums[:3])) if nums else ""
         return Response(
             kind="excerpt", status="ok", text=quote,
             citations=[Citation(ref=ref, quote=quote, kind="text")],
-            confidence=round(cov, 3),
+            confidence=round(cov, 3), note=note,
         )
 
     def ask(self, question: str) -> Response:
@@ -385,4 +423,9 @@ class Answerer:
         if metric and metric.status == "ok":
             return metric
         text = self._excerpt_answer(question)
+        if metric is not None and metric.status == "no_data":
+            # XBRL 明确说「这个指标没披露」时，正文摘录不得把它顶掉。
+            # 否则 Amazon「研发费用是多少」会拿到一段 IPR&D 会计政策（status=ok），
+            # 而英文路问同一个指标答的是 no_data——同一个事实两套结论。
+            return metric
         return text if text.status == "ok" else (metric or text)

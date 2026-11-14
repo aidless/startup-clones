@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -14,11 +16,17 @@ sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture(scope="module")
-def client():
+def app_mod():
+    """路由函数本体：并发测试直调它，绕开 TestClient 的 portal 串行。"""
     spec = importlib.util.spec_from_file_location("console_app", ROOT / "app.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return TestClient(mod.app)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def client(app_mod):
+    return TestClient(app_mod.app)
 
 
 def test_projects_list_has_six(client):
@@ -41,14 +49,48 @@ def test_filing_refuses_without_citations(client):
 
 
 def test_filing_numeric_answer_carries_xbrl_citation(client):
-    """重复请求：SQLite 连接跨线程曾是间歇性 500（12 轮 pytest 炸 3 次）。
+    """单请求契约：数字答案必须带 XBRL 出处（并发正确性见下一条）。"""
+    d = client.get("/api/filing", params={"q": "营收多少"}).json()
+    assert d["status"] == "ok" and d["kind"] == "metric"
+    assert d["citations"][0]["kind"] == "xbrl"
 
-    单次断言抓不到这类缺陷——必须同一进程内连打多次，否则测试自己会变成 flaky 装饰。
+
+CIK = "0000320193"
+# 同一指标的不同问法：任何按问题缓存都 miss，真正复用那条 sqlite 连接
+QUESTIONS = ["营收多少", "营业收入是多少", "2025 年营收", "2023 年营收", "总营收"]
+
+
+def test_filing_concurrent_requests_match_single_thread_baseline(app_mod):
+    """跨线程竞态回归：8 线程 × 50 次，每次返回值必须与单线程基线逐值相等。
+
+    旧的 `for _ in range(5)` 是同一线程顺序打 5 次，永远绿（永不并发），
+    于是共享 sqlite 连接的竞态继续存在：同一连接 8 线程实测 17 次异常 /
+    24 次错值（2019 营收 640.40B 被读成 229.23B，HTTP 仍 200）。
     """
-    for _ in range(5):
-        d = client.get("/api/filing", params={"q": "营收多少"}).json()
-        assert d["status"] == "ok" and d["kind"] == "metric"
-        assert d["citations"][0]["kind"] == "xbrl"
+    baseline = {}
+    for q in QUESTIONS:
+        r = app_mod.filing(q=q, cik=CIK)
+        assert r.status_code == 200
+        baseline[q] = json.loads(r.body)
+
+    def call(i: int):
+        q = QUESTIONS[i % len(QUESTIONS)]
+        try:
+            return q, json.loads(app_mod.filing(q=q, cik=CIK).body), None
+        except Exception as exc:                      # noqa: BLE001 —— 竞态表现为异常
+            return q, None, repr(exc)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(call, range(8 * 50)))
+
+    errors = [r for r in results if r[2] is not None]
+    assert not errors, f"{len(errors)}/{len(results)} 次并发请求抛异常，首个：{errors[0][2]}"
+    bad = [(q, body) for q, body, _ in results if body != baseline[q]]
+    assert not bad, (
+        f"{len(bad)}/{len(results)} 次并发返回值与单线程基线不同，"
+        f"首个问题 {bad[0][0]!r}：{bad[0][1]['text'] if bad[0][1] else None}")
+    assert all(body["status"] == "ok" and body["citations"][0]["kind"] == "xbrl"
+               for _, body, _ in results)
 
 
 def test_audit_reports_exceptions_and_status(client):

@@ -20,6 +20,13 @@ RISK_PATTERNS = [
     (re.compile(r"(退款|付款|转账|打款|汇款|汇给|汇出|转给|转\s*\d|还给|退回|退给|打钱|付给|"
                 r"打\s*(?:\d|[一二三四五六七八九十])|"
                 r"refund|wire|payment|remit|transfer|send\s+\d+|pay\s+\d+)", re.I), "money"),
+    # 英文动词 + 货币符号/ISO 代码这一整类：只写 `send\s+\d+` 时
+    # `send $500 to the vendor` / `pay $1,200 now` / `settle 500 USD` 全部直发，
+    # 而 is_external 只看域名后缀 —— 英文写法的内部同事能让 agent 直接对外发钱指令。
+    (re.compile(r"\b(?:send|pay|wire|transfer|remit|settle|refund|invoice|charge)\b"
+                r"[^.\n]{0,20}?(?:usd|rmb|cny|eur|gbp|jpy|hkd|\$|¥|€|£)\s*[\d,]+", re.I), "money"),
+    (re.compile(r"[\$¥€£]\s*[\d,]{2,}"), "money"),
+    (re.compile(r"[\d,]+\s*(?:usd|rmb|cny|eur|gbp|jpy|hkd)\b", re.I), "money"),
     (re.compile(r"(删除|删掉|销户|drop\s+table|delete\s+all)", re.I), "destructive"),
     (re.compile(r"(密码|验证码|身份证|password|otp|ssn|id\s*card)", re.I), "secrets"),
     (re.compile(r"(合同|报价|commit|签约|invoice)", re.I), "commercial"),
@@ -89,12 +96,16 @@ class Policy:
         if not inbound.text.strip():
             self._log(inbound, "blocked", "空消息")
             return Decision(False, "空消息")
-        if not self._take_global_token():
-            self._log(inbound, "throttled", "全局速率")
-            return Decision(False, f"超出全局 {self.global_rate_limit}/{self.window}s 速率限制")
+        # 顺序是安全属性：先判「这个发件人自己是否超限」，通过了才扣全局令牌。
+        # 反过来的话，被 per-sender 拒掉的重试也已经花掉全局额度 —— 一个固定 From
+        # 连刷 6 条就能把全局桶清零，正常发件人全体被挡（与全局桶「2 倍单发件人」的
+        # 设计意图相反）。
         if not self._take_token(inbound.sender):
             self._log(inbound, "throttled", "超出速率")
             return Decision(False, f"发件人 {inbound.sender} 超出 {self.rate_limit}/{self.window}s 速率限制")
+        if not self._take_global_token():
+            self._log(inbound, "throttled", "全局速率")
+            return Decision(False, f"超出全局 {self.global_rate_limit}/{self.window}s 速率限制")
         self._log(inbound, "accepted", "")
         return Decision(True)
 

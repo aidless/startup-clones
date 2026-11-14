@@ -39,12 +39,23 @@ class Trace:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Trace":
+        meta = dict(d.get("meta") or {})
+        # 结束原因与「是否被打断」是同一件事的两种写法，不同导出器只给一个。
+        # 在这里补齐，避免下游各读一半（`turn_completed` 曾只认 aborted，
+        # 于是 `reason=error` 的轨迹拿满分）。
+        if meta.get("reason") == "error":
+            meta["aborted"] = True
+        elif meta.get("aborted") and not meta.get("reason"):
+            meta["reason"] = "aborted"
+        else:
+            meta.setdefault("aborted", False)
+            meta.setdefault("reason", "completed")
         return cls(
             case_id=str(d.get("case_id") or d.get("id")),
             input=d.get("input", ""),
             output=d.get("output", d.get("answer", "")),
             tool_calls=[ToolCall(**t) if isinstance(t, dict) else t for t in d.get("tool_calls", [])],
-            meta=d.get("meta", {}),
+            meta=meta,
         )
 
 

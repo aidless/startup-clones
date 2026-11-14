@@ -29,6 +29,49 @@ def _pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
+def _pp(x: float) -> str:
+    """声量份额差是百分点（pp），不是百分比 —— 印成 % 会被读成相对变化。"""
+    return f"{x * 100:.1f} 个百分点"
+
+
+def _gap_lines(gap: dict, our: BrandStats) -> list[str]:
+    """三个维度各判各的方向。
+
+    `gap_*` 一律是「竞品 − 我们」：声量为正 = 我们落后；出现率为正 = 我们少出现；
+    位次为正 = 我们名次更靠前（位次数字越小越好）。三项共用一句「领先/落后」
+    就会印出「平均位次领先 **-0.8** 位」「出现率多 **-1** 条提示词」这种负数量。
+    """
+    out = [f"对比 **{gap['leader']}**：", ""]
+
+    gs = gap["gap_sov"]
+    if gs == 0:
+        out.append(f"- 声量持平（各 {_pct(our.share_of_voice)}）")
+    elif gs > 0:
+        out.append(f"- 声量落后 **{_pp(gs)}**（我们 {_pct(our.share_of_voice)}）")
+    else:
+        out.append(f"- 声量领先 **{_pp(-gs)}**（我们 {_pct(our.share_of_voice)}）")
+
+    gv = gap["gap_visibility"]
+    if gv == 0:
+        out.append(f"- 出现率相同（各 {our.prompts_seen} 条提示词）")
+    elif gv > 0:
+        out.append(f"- 出现率少 **{gv}** 条提示词（我们 {our.prompts_seen} 条）")
+    else:
+        out.append(f"- 出现率多 **{-gv}** 条提示词（我们 {our.prompts_seen} 条）")
+
+    gp = gap.get("gap_position")
+    if gp is None:
+        out.append("- 平均位次无从比较（本周期有一方一次都没被提到）")
+    elif abs(gp) < 0.05:
+        # 差 0.02 位不是「落后」，四舍五入印成 "0.0 位" 会被读成并列却写着落后
+        out.append("- 平均位次相同")
+    elif gp > 0:
+        out.append(f"- 平均位次领先 **{gp:.1f}** 位（我们 {our.avg_position} 位）")
+    else:
+        out.append(f"- 平均位次落后 **{-gp:.1f}** 位（我们 {our.avg_position} 位）")
+    return out
+
+
 def markdown_report(
     brand: str,
     category: str,
@@ -61,9 +104,11 @@ def markdown_report(
         rate = s.prompts_seen / prompts_total if prompts_total else 0
         lo, hi = proportion_ci(s.prompts_seen, prompts_total) if prompts_total else (0.0, 0.0)
         mark = " ←" if name == brand else ""
+        # 零提及的品牌没有平均位次：印 0.0 会被读成「第一名」，用破折号表示「没有」。
+        avg_pos = "—" if s.avg_position is None else f"{s.avg_position}"
         lines.append(
             f"| {name}{mark} | {s.mentions} | {_pct(rate)} [{_pct(lo)}, {_pct(hi)}] | "
-            f"{_pct(s.share_of_voice)} | {s.avg_position} | {s.sentiment:+.2f} |"
+            f"{_pct(s.share_of_voice)} | {avg_pos} | {s.sentiment:+.2f} |"
         )
     if not stats:
         lines.append("| （无提及） | 0 | 0.0% | 0.0% | - | 0.00 |")
@@ -72,24 +117,7 @@ def markdown_report(
     if gap.get("gap_sov") is None:
         lines.append("没有可比的竞品数据，先补竞品清单。")
     else:
-        # gap_sov 是「竞品 − 我们」：为负说明我们领先，不能照抄成「落后 -53.8%」
-        if gap["gap_sov"] == 0 and gap["gap_visibility"] == 0:
-            lines.append(
-                f"与 **{gap['leader']}** 声量**持平**（各 {_pct(stats[brand].share_of_voice)}），"
-                f"出现率相同，平均位次差 **{gap['gap_position']}** 位。"
-            )
-        elif gap["gap_sov"] < 0:
-            lines.append(
-                f"领先 **{gap['leader']}** 声量 **{_pct(-gap['gap_sov'])}**、"
-                f"出现率多 **{-gap['gap_visibility']}** 条提示词、"
-                f"平均位次领先 **{-gap['gap_position']}** 位。"
-            )
-        else:
-            lines.append(
-                f"落后 **{gap['leader']}** 声量 **{_pct(gap['gap_sov'])}**、"
-                f"出现率少 **{gap['gap_visibility']}** 条提示词、"
-                f"平均位次差 **{gap['gap_position']}** 位。"
-            )
+        lines.extend(_gap_lines(gap, stats[brand]))
 
     lines += ["", "## 3. 位次分布（我们）", ""]
     dist = rank_distribution(mentions, brand)

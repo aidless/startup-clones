@@ -108,3 +108,11 @@ def new_run_id(prefix: str = "run") -> str:
     """
     now = datetime.now(timezone.utc)
     return f"{prefix}-{now.strftime('%Y%m%dT%H%M%S')}{now.microsecond:06d}-{secrets.token_hex(2)}"
+
+
+def delete_run(conn: sqlite3.Connection, run_id: str) -> None:
+    """撤销一次没走完的 run（渲染/写文件阶段炸了，库里不该留半份报告）。"""
+    with conn:
+        conn.execute("DELETE FROM mentions WHERE run_id=?", (run_id,))
+        conn.execute("DELETE FROM answers WHERE run_id=?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))

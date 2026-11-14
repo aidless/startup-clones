@@ -52,6 +52,7 @@ def _answer_payload(question: str, ans) -> dict:
         "status": ans.status,
         "text": ans.text,
         "confidence": round(ans.confidence, 4),
+        "note": ans.note,
         "citations": [{"kind": c.kind, "ref": c.ref, "quote": c.quote} for c in ans.citations],
     }
 

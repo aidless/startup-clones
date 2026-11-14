@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from .models import Finding, StepResult, severity_rank
+from .models import Finding, StepResult, counts_as_high, severity_rank
 
 
 @dataclass
@@ -60,7 +60,10 @@ class AuditRun:
 
     @property
     def high(self) -> list[Finding]:
-        return [f for f in self.findings if f.severity == "high"]
+        # 判定走 counts_as_high：认不出的严重度按 high 处理（fail-closed）。
+        # 原先这里是 `== "high"` 精确匹配，一个 `critical` 就能让「high 例外 0 条」
+        # 与「结论：clean」并排印在同一张摘要上。
+        return [f for f in self.findings if counts_as_high(f.severity)]
 
     @property
     def status(self) -> str:

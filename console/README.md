@@ -1,14 +1,15 @@
 # console — 六个工具的统一演示台
 
-一个 FastAPI 进程 + 一个页面，把六个项目各自的链路原样暴露出来。**没有为演示另写逻辑**：
-每个面板调的都是库里已经在跑的函数。
+一个 FastAPI 进程 + 一个页面，把六个项目各自的链路原样暴露出来。每个面板调的都是库里
+已经在跑的函数；**但场景数据（消息、价格、调用序列）是本文件内联的副本**，不是从各项目 CLI
+的 demo 里 import 的——CLI 改了 demo 场景，这些面板不会跟着变（见 `app.py:159-265`）。
 
 ## 快速开始
 
 ```bash
 cd console
 python3 app.py --port 8800        # 打开 http://127.0.0.1:8800
-python3 -m pytest -q              # 11 passed（含跨线程竞态回归：filing 面板连打 5 次）
+python3 -m pytest -q              # 12 passed（含真正的跨线程竞态回归：8 线程 × 50 次）
 ```
 
 命令行验活（不用浏览器也能确认六个面板都活着）：
@@ -19,8 +20,8 @@ for p in projects geo filing audit crux inbox store; do
 done
 ```
 
-依赖只有 `fastapi` 与 `uvicorn`（`pyproject.toml` 里声明）；六个子项目通过相对路径导入，
-所以必须从 `console/` 目录启动，并且同级目录里要有那六个项目。
+依赖只有 `fastapi` 与 `uvicorn`（`pyproject.toml` 里声明）；六个子项目的路径由 `app.py`
+的 `ROOT`（`__file__` 推导）绝对化，所以**可以从任意目录启动**，只要同级目录里要有那六个项目。
 
 ## 六个面板
 
@@ -43,6 +44,8 @@ done
 
 ## 已知局限
 
-- 无鉴权、无并发保护，只在本机演示用。
-- filing 面板的 `Answerer` 缓存在进程内，`data/` 里新增文件需要重启。
+- 无鉴权，只在本机演示用。
+- filing 面板的 `Answerer` **按线程**缓存（sqlite 连接不跨线程共享，见 `app.py:86-113`）：
+  同一线程内复用，`data/` 里新增文件需要重启；进程内最多每个工作线程解析一次 10-K。
+- 无请求级配额：20 个并发冷启动请求会各解析一遍 10-K（实测最大 63 s）。
 - GEO 面板故意用假模型：真实份额结论见 `geo-radar/README.md` 的强模型对照表。

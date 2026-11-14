@@ -110,6 +110,30 @@ python3 -m pytest                   # 一条命令跑完七个项目的全部测
 修法：`judge` 增加 `--rubric {agent,default}`，默认 `agent`；JSON 里带上 `"rubric"` 字段。
 正对照测试显式要 `default` 时必须真的换过去（否则「默认对」可能只是写死）。
 
+## 第四轮：外部审查打出来的缺陷（R3）
+
+三个只读审查员（filing+geo / audit+crux / inbox+store+console）跑真命令、实跑真实数据，
+报 **P0 8 条 / P1 14 条 / P2 15 条**。报告在 `docs/REVIEW-R3-*.md`，逐条带复现命令。
+全部 P0/P1 已按 TDD 修完（先跑红、留失败信息，再改实现），P2 只处理「文档与实现不符」类。
+
+| 缺陷 | 为什么它比崩溃更贵 | 修法 |
+|---|---|---|
+| console `/api/filing` 共享一个 sqlite 连接（`check_same_thread=False`） | 8 线程×50 次实测 17 异常 + **24 次静默错值**（2019 营收 640.40B 读成 229.23B），HTTP 200 照常渲染 | 连接按线程分区（`threading.local()`），回归测试改成真并发 8×50 |
+| `facts` 主键没有 `start`，年报与 Q4 共享 `end` 互相覆盖 | 微软 FY2018–20 报 30/33/38B（真值 110/126/143B），还输出 YoY +342.0% | 主键加 `start` + 只取 330–400 天的年度行 + 按 `end` 去重 |
+| 员工数拒答文案断言「全文没有这类陈述」 | Intel 的脚注上标把 `85,100 people` 切成三行、Qualcomm 用 `workers`；是真没解析出来，不是文件里没有 | 删独占行的上标、`HEADCOUNT_RE` 认 workers/staff/headcount，文案改成「未匹配到句式」 |
+| `analytics` 单年数据一律 `status=ok` | 「没查」被写成「查了正常」，且 exit 0 | 无上期 → `insufficient`，新增退出码 3（全是未判定） |
+| `calibrate` 用默认 rubric 而 `judge` 用 agent rubric | 人工与 judge 100% 一致时仍报 kappa +0.043 BLOCK | `calibrate` 也走 `_rubric_for`，并打印 `rubric=` |
+| inbox 全局限流令牌在 per-sender 拒绝前被扣 | 一个固定 From 连刷 6 条，正常客户就吃「超出全局额度」 | 先 per-sender 后全局 |
+| agent-store 幂等只在进程内 | 换 Runtime 重投同一 request_id → handler 执行两次 | `usage` 表落执行结果，`Runtime` 先查库回放 |
+| geo 差距句只用声量开关三句措辞 | 「出现率少 **-1** 条」「领先 -0.8 位」——符号自己打自己 | 三个维度各判方向，百分比统一叫「个百分点」 |
+| XBRL 无披露时中文提问被文本摘录覆盖 | Amazon 研发 → 返回 IPR&D 会计政策段却标 `ok`；英文同问诚实 `no_data` | `no_data` 不再被文本覆盖 |
+| geo `demo` 崩前已落库 | Namespace 缺 `json`，崩了但库里留半个 run | demo 复用 `run` 的解析器 + 渲染失败 `delete_run` 回滚 |
+
+**这轮最值得记住的一条**：这些缺陷在输出上都不像错误。
+营收数字错了一位、差距句多个负号、`status` 写 `ok`——页面照常渲染、退出码照常 0。
+所以审查员被要求「跑真命令 + 贴原始输出」，而不是读代码猜测；
+修复的验收也统一是「同一份真实输入，修前修后并排看」。
+
 ## 还没打磨到的（第三轮之后的诚实清单）
 
 - ~~`agent-inbox` / `agent-store` 没有查询型子命令~~ 已处理一半：`agent-inbox` 补了

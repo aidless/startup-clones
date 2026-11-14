@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS usage (
     units      INTEGER NOT NULL,
     cents      INTEGER NOT NULL,
     ts         TEXT NOT NULL,
+    -- 执行结果也落库：幂等若只记在进程内字典里，重启 / 多副本 / 换 worker 后
+    -- 同一 request_id 会重跑 handler（副作用执行两次），且回放标志为假。
+    ok         INTEGER NOT NULL DEFAULT 1,
+    output     TEXT NOT NULL DEFAULT '',
+    error      TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (buyer, request_id)
 );
 CREATE TABLE IF NOT EXISTS statements (
@@ -55,6 +60,9 @@ class UsageRecord:
     units: int
     cents: int
     duplicate: bool = False
+    ok: bool = True
+    output: str = ""
+    error: str = ""
 
 
 @dataclass
@@ -119,8 +127,19 @@ class Ledger:
     def __init__(self, db_path: str = ":memory:", now: str = "2026-11-12T00:00:00Z"):
         self.conn = sqlite3.connect(db_path)
         self.conn.executescript(SCHEMA)
+        self._migrate_usage()
         self._now = now
         self._manifests: dict[tuple[str, str], AgentManifest] = {}
+
+    def _migrate_usage(self) -> None:
+        """老库里的 usage 没有 ok/output/error 三列：补上，别让旧账单库打不开。"""
+        have = {row[1] for row in self.conn.execute("PRAGMA table_info(usage)").fetchall()}
+        for col, ddl in (("ok", "INTEGER NOT NULL DEFAULT 1"),
+                         ("output", "TEXT NOT NULL DEFAULT ''"),
+                         ("error", "TEXT NOT NULL DEFAULT ''")):
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE usage ADD COLUMN {col} {ddl}")
+        self.conn.commit()
 
     def register(self, manifest: AgentManifest) -> None:
         """计量需要清单里的价格；真实系统从 registry 读，这里显式注入便于测试。"""
@@ -140,21 +159,35 @@ class Ledger:
         return p.cents_per_unit          # subscription：按周期一次性
 
     def record(self, buyer: str, agent_id: str, version: str,
-               request_id: str, units: int, cents: int | None = None) -> UsageRecord:
+               request_id: str, units: int, cents: int | None = None,
+               ok: bool = True, output: str = "", error: str = "") -> UsageRecord:
         """记一次调用。cents 仅用于测试按分计价的边界（默认按清单算价）。"""
-        row = self.conn.execute(
-            "SELECT cents FROM usage WHERE buyer=? AND request_id=?",
-            (buyer, request_id)).fetchone()
-        if row:
-            return UsageRecord(request_id, buyer, agent_id, version, units, row[0], duplicate=True)
+        seen = self.replay(buyer, request_id)
+        if seen is not None:
+            return seen
         if cents is None:
             cents = self.price(agent_id, version, units)
         self.conn.execute(
-            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (request_id, buyer, agent_id, version, units, cents, self._now))
+            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts,ok,output,error) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (request_id, buyer, agent_id, version, units, cents, self._now,
+             1 if ok else 0, output, error))
         self.conn.commit()
-        return UsageRecord(request_id, buyer, agent_id, version, units, cents)
+        return UsageRecord(request_id, buyer, agent_id, version, units, cents,
+                           ok=ok, output=output, error=error)
+
+    def replay(self, buyer: str, request_id: str) -> UsageRecord | None:
+        """按 (buyer, request_id) 取已落库的执行记录；没有则 None。
+
+        这张表就是幂等的**权威**：Runtime 的重投判断以它为准，进程内字典只当缓存。
+        """
+        row = self.conn.execute(
+            "SELECT request_id,buyer,agent_id,version,units,cents,ok,output,error "
+            "FROM usage WHERE buyer=? AND request_id=?", (buyer, request_id)).fetchone()
+        if row is None:
+            return None
+        return UsageRecord(row[0], row[1], row[2], row[3], row[4], row[5], duplicate=True,
+                           ok=bool(row[6]), output=row[7] or "", error=row[8] or "")
 
     def statement(self, buyer: str, developers: dict[str, str],
                   fee_pct: int = 20) -> Statement:

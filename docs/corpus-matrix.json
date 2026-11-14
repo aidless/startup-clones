@@ -1,5 +1,5 @@
 {
-  "parser_digest": "f59ec3713c2d",
+  "parser_digest": "df036b564b68",
   "summary": {
     "total": 22,
     "ok": 22,
@@ -53,7 +53,7 @@
       "error": "",
       "doc": "0000050863_10k_2025-12-27",
       "sections": 1,
-      "chunks": 908,
+      "chunks": 907,
       "tables": 102,
       "has_xbrl": true
     },

@@ -72,13 +72,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     # 落库后从库里读回来装配：内存里的 stats/answers 与 `report --run-id` 走同一个
     # 函数（georadar.view.assemble），两条路径不再各拼一份。副作用是这里打印的
     # 就是「真正落盘、以后还能复现」的那份数，若落库有丢失会当场看得见。
-    v = view.load_view(conn, run.run_id)
+    try:
+        v = view.load_view(conn, run.run_id)
+        markdown = v.markdown
+    except BaseException:
+        # 装配/渲染失败就把这次 run 撤掉：否则用户库里躺着一条打不开的报告，
+        # 而 `report --run-id` 连自己都渲染不出来（demo 曾是这么崩的）。
+        store.delete_run(conn, run.run_id)
+        raise
 
     if args.json:
         payload = _run_payload(v)
         if args.out:
             with open(args.out, "w", encoding="utf-8") as f:
-                f.write(v.markdown + "\n")
+                f.write(markdown + "\n")
             payload["report_path"] = args.out
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -93,7 +100,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         with open(args.out, "w", encoding="utf-8") as f:
             # 末尾补换行：否则同一份报表「落盘文件」与「report 打印」只差一个
             # 行尾换行符，diff 会报 43c43，看上去像两份报表不一样。
-            f.write(v.markdown + "\n")
+            f.write(markdown + "\n")
         print(f"report   : {args.out}")
     return 0
 
@@ -108,17 +115,26 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+DEMO_ARGS = [
+    "run", "--brand", "Acme", "--category", "AI SRE",
+    "--competitors", "Traversal,Rootly", "--provider", "mock",
+    "--model", "mock-1", "--repeat", "3", "--limit", "12",
+    "--out", "reports/acme-weekly.md",
+]
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
-    ns = argparse.Namespace(
-        db="georadar.db", brand="Acme", category="AI SRE",
-        competitors="Traversal,Rootly", provider="mock", model="mock-1",
-        repeat=3, limit=12, out="reports/acme-weekly.md",
-    )
+    """零配置演示：走 `run` 的同一套解析器，不再手搓 Namespace。
+
+    手搓过一次，漏了 `--json` 字段，于是 `cmd_run` 在 `save_run` 之后抛
+    `AttributeError: 'Namespace' object has no attribute 'json'`：命令退出 1，
+    库里却已经写进一次 run。命令行参数只该有一处定义。
+    """
     import os
     os.makedirs("reports", exist_ok=True)
-    rc = cmd_run(ns)
+    rc = main(DEMO_ARGS)
     if rc == 0:
-        with open(ns.out, encoding="utf-8") as f:
+        with open("reports/acme-weekly.md", encoding="utf-8") as f:
             print("\n" + "─" * 60 + "\n")
             print(f.read()[:1200])
     return rc
@@ -135,8 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--category", required=True)
     r.add_argument("--competitors", default="")
     r.add_argument("--provider", default="mock",
-                   choices=["mock", "ollama", "openai", "openai-compat", "deepseek", "kimi", "vllm"],
-                   help="ollama 走本机 127.0.0.1:11434，不需要 key")
+                   choices=["mock", "ollama", "openai", "openai-compat", "deepseek", "kimi",
+                            "vllm", "magpie"],
+                   help="ollama 走本机 127.0.0.1:11434；magpie 走本机网关，都不需要 key")
     r.add_argument("--model", default="mock-1")
     r.add_argument("--repeat", type=int, default=3)
     r.add_argument("--limit", type=int, default=0)

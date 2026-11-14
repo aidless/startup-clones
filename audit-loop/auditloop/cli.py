@@ -27,10 +27,13 @@ def build_run(entity: str = "Acme Industrial") -> AuditRun:
     invs = fixtures.invoices()
     period_end = fixtures.PERIOD_END
     as_of = fixtures.AS_OF
-    rec = checks.reconcile_bank(ents, lines)
-    buckets = checks.ar_aging(invs, as_of)
+    # rec / buckets 必须**在闭包里**算：原先它们在 register 之前求值，
+    # 一行脏数据就让 build_run 直接抛 traceback 退出，engine 的
+    # try/except → status=degraded 这条防线根本没被触达。
+    # 前置计算搬进各自的步骤后，register 才是唯一的执行入口。
 
     def bank_recon():
+        rec = checks.reconcile_bank(ents, lines)
         out = []
         for e, b in rec.amount_diff:
             out.append(checks.Finding(
@@ -45,6 +48,7 @@ def build_run(entity: str = "Acme Industrial") -> AuditRun:
         return out
 
     def aging():
+        buckets = checks.ar_aging(invs, as_of)
         out = []
         for b in buckets:
             if b.label == ">90" and b.invoices:
@@ -123,7 +127,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
-    ns = argparse.Namespace(entity="Acme Industrial", out="out/workpaper.xlsx")
+    # 显式给全 cmd_run 会读的字段：漏一个就是 AttributeError，
+    # 而且是在 6 个程序都跑完之后崩在打印分支上（用户连「哪步坏了」都看不到）。
+    ns = argparse.Namespace(entity="Acme Industrial", out="out/workpaper.xlsx",
+                            json=False)
     return cmd_run(ns)
 
 
@@ -145,7 +152,12 @@ def analytics_line(item) -> str:
     if item.ref:
         head += f" FY{item.ref}"
     if item.status == "insufficient":
-        return f"{head} 本期 — 上期 — 变化 — 判定 数据不足"
+        line = f"{head} 本期 — 上期 — 变化 — 判定 数据不足"
+        # 为什么「数据不足」也要带原因：只印四个字，现场无从判断是缺列、
+        # 缺上期，还是数据本身有问题 —— 三种情况的补救办法完全不同。
+        if item.detail:
+            line += f"  {item.detail}"
+        return line
     cur = f"{item.current:.{p}f}"
     prior = "—" if item.prior is None else f"{item.prior:.{p}f}"
     change = "—" if item.change is None else f"{item.change:+.{p}f}"
@@ -158,10 +170,14 @@ def analytics_line(item) -> str:
 def cmd_analytics(args: argparse.Namespace) -> int:
     """分析性程序的命令行出口。
 
-    为什么退出码分三档：这个子命令是给脚本/CI 调用的，「跑完了没」和
-    「有没有要人处理的背离」是两件事。0=跑完无异常、1=跑完有异常、
-    2=根本没跑成（文件缺失/JSON 坏了/没有收入列）。把 1 压成 0 会让
-    背离在流水线上与干净数据无法区分，那是审计里最贵的一种失败。
+    退出码四档（README 的「退出码」一节逐条写明了）：
+    0=跑完，至少一条指标判定成立且无异常；1=跑完且有异常；
+    2=根本没跑成（文件缺失/JSON 坏了/没有收入列）；
+    3=跑完了，但一条指标都没判定成（全部「数据不足」）。
+
+    为什么要第 3 档：0 的含义是「查过了，没问题」。全部指标都算不出来时
+    退出码仍是 0，流水线上它与「真查过且干净」长得一模一样 —— 这是审计里
+    最贵的一种失败（没查被当成查过）。部分未判定时走 stderr 说明，仍按 0/1。
     """
     try:
         payload = json.loads(Path(args.facts).read_text(encoding="utf-8"))
@@ -187,13 +203,15 @@ def cmd_analytics(args: argparse.Namespace) -> int:
     items = assess(series)
     anomalies = [i for i in items if i.flag]
     insufficient = [i for i in items if i.status == "insufficient"]
+    nothing_judged = bool(items) and len(insufficient) == len(items)
 
     if args.json:
         print(json.dumps({
             "entity": entity,
             "items": [i.as_dict() for i in items],
             "summary": {"total": len(items), "anomalies": len(anomalies),
-                        "insufficient": len(insufficient)},
+                        "insufficient": len(insufficient),
+                        "nothing_judged": nothing_judged},
         }, ensure_ascii=False, indent=2))
     else:
         print(f"{entity} · 分析性程序")
@@ -202,6 +220,14 @@ def cmd_analytics(args: argparse.Namespace) -> int:
         if anomalies:
             print(f"异常 {len(anomalies)} 项 / 共 {len(items)} 项"
                   f"（未计算 {len(insufficient)} 项）")
+
+    if nothing_judged:
+        print(f"一条指标都没判定成：{len(items)} 项全部数据不足（缺列或只有一个财年），"
+              f"这份输入给不出任何结论", file=sys.stderr)
+        return 3
+    if insufficient:
+        print(f"未判定 {len(insufficient)} 项 / 共 {len(items)} 项（无可比上期或缺列）",
+              file=sys.stderr)
     return 1 if anomalies else 0
 
 

@@ -90,10 +90,14 @@ def cmd_judge(args: argparse.Namespace) -> int:
 def cmd_calibrate(args: argparse.Namespace) -> int:
     traces = _read_traces(args.traces)
     human = json.loads(open(args.labels, encoding="utf-8").read())
-    judge_map = _pass_map(Judge(threshold=args.threshold).score_all(traces))
+    # 必须用与 judge 同一个 `_rubric_for(args.rubric)`：原先写死
+    # `Judge(threshold=...)`（= DEFAULT_RUBRIC），校的是另一把尺，
+    # 于是「rubric 不同」被诊断成「judge 偏松/偏严」。
+    judge_map = _pass_map(Judge(rubric=_rubric_for(args.rubric),
+                                threshold=args.threshold).score_all(traces))
     cal = calibrate(human, judge_map, min_kappa=args.min_kappa)
     print(f"样本 {cal.n} · 一致率 {cal.agreement:.1%} · kappa {cal.kappa:+.3f} · "
-          f"门槛 {cal.min_kappa}")
+          f"门槛 {cal.min_kappa} · rubric={args.rubric}")
     print(f"人工通过率 {cal.human_pass_rate:.1%} / judge 通过率 {cal.judge_pass_rate:.1%}")
     print(f"结论：{'PASS' if cal.ok else 'BLOCK'} — {cal.diagnosis}")
     return 0 if cal.ok else 2
@@ -150,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--labels", required=True)
     c.add_argument("--min-kappa", type=float, default=0.6)
     c.add_argument("--threshold", type=float, default=0.75)
+    c.add_argument("--rubric", choices=["agent", "default"], default="agent",
+                   help="与 judge 口径一致：agent=产品自身的 agent 轨迹 rubric（默认）；"
+                        "default=judge.py 的通用五条")
     c.set_defaults(func=cmd_calibrate)
 
     d = sub.add_parser("diff", help="两版结果对比")

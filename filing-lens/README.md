@@ -7,6 +7,10 @@
 
 ## 20 家真实公司的基准（`bench/report.md`）
 
+> **快照状态**：`bench/report.md` 是员工数修复（P0-1）**之前**跑出来的，里面还写着 18/20。
+> 修完后同一批 20 家的员工数实测 20/20（`tests/test_review_r3.py` 与 `python3 scripts/batch_bench.py --no-fetch` 可复核）。
+> 本表其余三行未受影响。
+
 > 口径说明：`data/` 里现在有 **22 家**，其中 `0000909832`、`0002078730` 是后来为「复核差异表」演示补进来的小盘样本，**没有纳入这份 20 家基准**（重跑基准见`scripts/batch_bench.py --no-fetch`）。
 
 ```bash
@@ -18,7 +22,7 @@ python3 scripts/batch_bench.py --no-fetch # 只用 data/ 里已有的
 |---|---|---|
 | XBRL 数字题（营收 / 净利 / 研发） | **55/55 正确** | 真值取 XBRL 年度序列最后一年，答案金额与之比相对误差 ≤0.5% |
 | 风险因素（文本题） | **20/20 有答案且带段落级出处** | 只验格式，内容对错机器判不了 |
-| 员工数 | **18/20 给出人数**，2 家明确拒答 | 必须给出「N 名员工」的陈述，且双年度并列时要取本期那个数 |
+| 员工数 | **20/20 给出人数** | 必须给出「N 名员工」的陈述，且双年度并列时要取本期那个数 |
 | 该拒答的（CEO 生日 / 门店数） | **40/40 拒答** | 必须 `insufficient_evidence` 且引用为空 |
 
 XBRL 里没披露的项目（Amazon/Adobe/Coca-Cola/Walmart/JPM 没有 R&D 标签）记为 n/a，
@@ -37,8 +41,14 @@ XBRL 里没披露的项目（Amazon/Adobe/Coca-Cola/Walmart/JPM 没有 R&D 标�
 4. **同一句里两个年份取错**：Coca-Cola 写 `65,900 and 69,700 employees, respectively`，
    贴着 `employees` 的是**旧**数字。加了 `respectively` 的特判，取第一个。
 5. **员工数根本没进 top-3**：它常写在第 40 篇里一句话，BM25 按查询词排不进来。改成专门一条路：
-   全文扫「N 名员工」的陈述，找到就用它答，找不到就拒答（Qualcomm、Intel 就一直拒答——
-   因为它们的 10-K 里真的没有这句）。
+   全文扫「N 名员工」的陈述，找到就用它答，找不到就拒答。
+   **这条路上我们自己也判错过**：Intel 与 Qualcomm 被拒答了整整一轮，拒答文案还写着
+   「全文没有「N 名员工」这类陈述」——那是假话。真正的原因是两种句式没被认出来：
+   Intel 写 `comprised of 85,100` + 脚注上标 `1` 独占一行 + `people`（上标把句子切断了），
+   Qualcomm 写 `57,000 full-time, part-time and temporary workers`（单位不是 employees）。
+   修法：`html_to_text` 把「上标独占行」删掉并把断句接回上一行；`HEADCOUNT_RE` 认
+   `workers/staff/headcount` 和数字与单位之间的人数修饰语。拒答文案也改成
+   「正文未匹配到「N + 人数单位」这类句式」——**只说系统匹配到了什么，不替文件下结论**。
 
 ## 任意公司 / 任意 URL
 
@@ -51,11 +61,42 @@ curl -X POST localhost:8765/api/ingest -H 'Content-Type: application/json' \
 只接受 https + SEC 域名，单文件 40MB 上限（边读边数，超了立刻停）。
 落盘名由 tag 决定，`{tag}_10k_{period}.htm` 与 `{tag}_facts.json` 必须同 tag，否则服务找不到。
 
+## 复核差异表（卖给事务所的那份东西）
+
+`scripts/review_diff.py` 不答问题，只把「正文里说的话」与「XBRL 里对得上的数」对着念一遍，
+把对不上的地方列成表——六项固定检查，每一条都带原文引用或标签名，查不了就写进「未覆盖」。
+
+```bash
+# 本地已有的公司
+python3 scripts/review_diff.py 0000320193
+# 从 EDGAR 现场抓（走 ingest.py 同一套清洗）
+python3 scripts/review_diff.py 0001481504 --data data-prospects
+# 顺手导 PDF（需要 google-chrome；缺了 exit 2，不吞）
+python3 scripts/review_diff.py 0001481504 --data data-prospects --pdf /tmp/xeriant.pdf
+# 演示用：往临时副本里注入一处真缺陷，检查必须当场抓到
+python3 scripts/review_diff.py 0001730168 --inject \
+  '27,537 million in net cash provided by operating activities' \
+  '16,178 million in net cash provided by operating activities'
+```
+
+三处被真实文件打出来的失真（都已修，测试钉住）：
+
+- **跨年比较**：原先各取各的年份，把 2026 的经营现金流减 2021 的现金再印「差 1.8×」。现在只取同年，
+  同年缺就写「不做跨年比较」；也不再印「存量÷流量」的倍数（没有经济含义）。
+- **整元金额**：正文按整元记账（`$ 20,690,000`）时，只认 million/billion 的解析器整项空转、报「正文没有同量级表述」。
+- **基数跨零**：`447,643 → −53,171` 印「-111.9%」并拿去否定正文；现在写「基数跨零、百分比无含义、只能看绝对额」。
+
+样本与结论都落盘了：`../go-to-market/samples/prospects/`（三家真事务所客户，含 PDF 与 accession）。
+
 ## 这个项目真正的难点不是 LLM
 
 投研问答的失败模式，90% 不是「模型不够聪明」，而是这三件：
 
-1. **数字从文本里捞**。文本里的数字是被人抄过的，任何人都可能在括注里写错。所以数字类问题**只走 XBRL 结构化事实**，文本通道一律不许出数字。
+1. **数字从文本里捞**。文本里的数字是被人抄过的，任何人都可能在括注里写错。所以数字类问题**只走 XBRL 结构化事实**：
+   ① 问「多少」时，正文摘录不得代答（`status=insufficient_evidence`，数字只从 XBRL 读）；
+   ② 定性摘录里本来就有数字（`48% of revenue`、`14 to 40 weeks`），这些必须带一条
+   `note`：「摘录中的 48% 来自正文，不是 XBRL 口径」（`Response.note`，JSON 里同名字段）。
+   **原来的「文本通道一律不许出数字」是句做不到的话**——摘原文就必然带出数字，说「一律不许」等于没写契约。
 2. **答非所问**。检索到了相关段落就往上套，用户问 A 你答 B。所以用查询词覆盖率做闸门，覆盖率低于 0.45（`answer.py:18 MIN_COVERAGE`）直接拒答。
 3. **无法自证**。给个答案没有页码/段落，用户无法验证，也就无法信任。所以每个 `Chunk` 带 `Item + 段落序号` 的 `ref`，答案必须挂引用。
 
@@ -133,15 +174,28 @@ cli.py      index / ask / metric / demo
 
 ## 演示输出（真实运行结果）
 
+`python -m filinglens.cli demo` 的四问原样抄下来（`tests/test_review_r3.py` 会逐行比对，
+README 与实跑输出不许再漂）：
+
 ```
 Q: supply chain concentration risk lidar supplier
-[ok] Supply chain concentration is our most significant operational risk. The lidar
-     module is sourced from one supplier, and lead times have ranged from 14 to 40 weeks.
-出处：[1] (text) ACME-10K#Item 1a¶1
+[ok] Supply chain concentration is our most significant operational risk. The lidar module is sourced from one supplier, and lead times have ranged from 14 to 40 weeks.
+注：摘录中的 14、40 来自正文，不是 XBRL 口径
+出处：
+  [1] (text) ACME-10K#Item 1a¶1
+
+Q: top customers concentration revenue
+[ok] We depend on a limited number of large customers. Our top five customers accounted for 48% of revenue in fiscal 2025.
+注：摘录中的 48% 来自正文，不是 XBRL 口径
+出处：
+  [1] (text) ACME-10K#Item 1a¶2
 
 Q: revenue
-[ok] revenue：FY2025 为 175.0M USD；同比变化 FY2024 +30.0%、FY2025 +34.6%。
-出处：[1..3] (xbrl) XBRL:RevenueFromContractWithCustomerExcludingAssessedTax@FY2023-2025
+[ok] revenue：FY2025 为 175.0M USD；近三年同比 FY2024 +30.0%、FY2025 +34.6%。
+出处：
+  [1] (xbrl) XBRL:RevenueFromContractWithCustomerExcludingAssessedTax@FY2025
+  [2] (xbrl) XBRL:RevenueFromContractWithCustomerExcludingAssessedTax@FY2024
+  [3] (xbrl) XBRL:RevenueFromContractWithCustomerExcludingAssessedTax@FY2023
 
 Q: what is the cryptocurrency mining plan in Argentina
 [insufficient_evidence] 文件里没有足够证据回答这个问题（证据不足，不作答）。
@@ -171,7 +225,8 @@ Q: what is the cryptocurrency mining plan in Argentina
   （`answer.py:325`；实测 `capital expenditure 是多少` 拒答）。
 - **员工数是「正文句式」问题，不是数据问题**。人数只从 `数字 + employees/people/associates/...`
   的句子里读（`answer.py:99-102` 的 `HEADCOUNT_RE`，`answer.py:268-305` 全文扫句）。
-  所以 `bench/report.md` 里 20 家有 2 家（Intel、Qualcomm）明确拒答——它们的 10-K 里没有这种陈述。
+  拒答只表示「正文没匹配到这种句式」，**不表示文件里没写**——Intel（脚注上标断句）与
+  Qualcomm（写 workers 不写 employees）都曾被这条误判成拒答，修好后 20/20 都能答。
   **表格里的人数读不到**：`html_to_text` 把每个单元格拆成独立行（`edgar.py:69-71`），
   「科目名 / 人数」不再构成「数字在前」的句式；而表格通道只抽成二维数组
   （`edgar.py:175`）、答案器只拿到 `chunks`（`corpus.py:35`），不参与人数回答。
@@ -198,7 +253,7 @@ MIT License.
 ## 演示服务
 
 ```bash
-python3 app/server.py --port 8792     # → http://127.0.0.1:8792
+python3 app/server.py --port 8765     # → http://127.0.0.1:8765（--port 默认值就是 8765）
 ```
 
 单页界面 + 三个接口（`/api/filings`、`/api/meta`、`/api/ask`）。页面只做一件事：
@@ -207,7 +262,9 @@ python3 app/server.py --port 8792     # → http://127.0.0.1:8792
 ### 覆盖率的两道口径（真实数据逼出来的）
 
 1. **词级 IDF 覆盖**：分母是查询词的 IDF 加权，用来挡住「只蹭到 CEO 三个字母」的假命中。
-2. **概念级覆盖**：中文概念经 `glossary` 桥成一组英文词，一个概念算命中要求该组词至少一半出现。
+2. **概念级覆盖**：中文概念经 `glossary` 桥成一组英文词，**该组词里命中一个就算这个概念命中**
+   （`index.py:107-144`）。早先要求「组内过半」，实测把 20 家里 9 家的「有多少员工」判成证据不足——
+   员工那组有五个词（employees people workforce headcount employed），正文通常只写 employees 一个。
    纯中文提问时词级分母被同义词撑大（供应链 → supply chain suppliers manufacturing），
    真答案只有 0.434，低于阈值 0.45 会被误杀；概念级能救回来。
 

@@ -71,7 +71,35 @@ def html_to_text(html: str) -> str:
     text = soup.get_text("\n")
     text = re.sub(r"[ \t\xa0]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return "\n".join(line.strip() for line in text.split("\n"))
+    lines = [line.strip() for line in text.split("\n")]
+    # 脚注上标会被拆成独立一行。Intel 10-K 原句是
+    #   "...workforce, which was comprised of 85,100" / "1" / "people as of December 27, 2025"
+    # 把那个 "1" 当正文留着，「N 名员工」的句式就被切断，`HEADCOUNT_RE` 反而匹配到
+    # "1 people"，全文扫句判成「没有人数陈述」——拒答，而且拒答文案还是假话。
+    # 判据收紧到「单/两位数独占一行，上一行以数字结尾、下一行以字母开头」，
+    # 表格里的数字单元（上下邻居仍是数字）不会被误删。
+    kept: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.fullmatch(r"\d", line):
+            idx = next((k for k in range(len(kept) - 1, -1, -1) if kept[k]), None)
+            prev = kept[idx] if idx is not None else ""
+            j = i + 1
+            while j < len(lines) and not lines[j]:
+                j += 1
+            nxt = lines[j] if j < len(lines) else ""
+            # 只看「上标」的样子：一位数独占一行，且下一行正文以小写字母接着写。
+            # 页码是「两位数 + 下一行大写开头」，所以不会被吃掉（吃掉页码会改动 ¶ 编号，
+            # 那是下游差异表按段引用的锚点）。
+            if prev and prev[-1].isdigit() and nxt[:1].islower():
+                # 上标被拆成独立一行：删掉它，并把被切断的句子接回上一行
+                kept[idx] = f"{prev} {nxt}"
+                i = j + 1
+                continue
+        kept.append(line)
+        i += 1
+    return "\n".join(kept)
 
 
 TOC_PAGE_RE = re.compile(r"[ivxlc\d]{1,4}", re.I)

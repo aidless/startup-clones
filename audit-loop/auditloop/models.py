@@ -59,8 +59,39 @@ SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1}
 UNKNOWN_SEVERITY_RANK = 2
 
 
+# 常见拼写变体 → 规范值。ERP 导出、别家底稿转过来、人工补录，同一档严重度
+# 会写成 HIGH / 高 / 严重 —— 只认小写字面量的实现会让「有 high 例外」与
+# `status=clean` 同时成立（审查 P1-7）。
+SEVERITY_ALIASES = {
+    "high": "high", "h": "high", "严重": "high", "高": "high", "重大": "high",
+    "medium": "medium", "med": "medium", "中": "medium", "一般": "medium",
+    "low": "low", "l": "low", "低": "low", "轻微": "low",
+}
+
+
+def normalize_severity(sev: str) -> str:
+    """把严重度的常见变体收成规范值；**认不出来的原样返回**。
+
+    原样返回是有意的：`critical` 这类本程序不认识的词，底稿上仍要照原文印出来
+    （复核人得看见上游给了什么），判定口径另由 `counts_as_high` 兜住。
+    """
+    if not isinstance(sev, str):
+        return sev
+    return SEVERITY_ALIASES.get(sev.strip().casefold(), sev)
+
+
 def severity_rank(sev: str) -> int:
     return SEVERITY_RANK.get(sev, UNKNOWN_SEVERITY_RANK)
+
+
+def counts_as_high(sev: str) -> bool:
+    """能不能让结论落到 attention_required。
+
+    认不出的严重度**按 high 处理**（fail-closed）：这里判的是「要不要人看」，
+    不是「多严重」。拼错一个词就静默降级成 medium，等于让上游的错字替审计师
+    做了「这条例外不重要」的决定 —— 审计里最贵的一种失败。
+    """
+    return sev == "high" or sev not in SEVERITIES
 
 
 @dataclass
@@ -71,6 +102,9 @@ class Finding:
     severity: str          # high | medium | low
     detail: str
     amount: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.severity = normalize_severity(self.severity)
 
 
 @dataclass
@@ -87,4 +121,4 @@ class StepResult:
 
     @property
     def high(self) -> int:
-        return sum(1 for f in self.findings if f.severity == "high")
+        return sum(1 for f in self.findings if counts_as_high(f.severity))

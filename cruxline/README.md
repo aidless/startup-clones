@@ -37,6 +37,8 @@ python -m cruxline.cli judge --traces data/traces.jsonl --threshold 0.75 --json
 # 换 --rubric default 是 judge.py 里的通用五条——同一批 60 条：agent 59/60、default 34/60。
 # --rubric 默认 agent（产品自身那套，两个 fatal 项）；--rubric default 是 judge.py 的通用五条
 # 实测仓库 60 条真实轨迹：agent 59/60 通过，default 34/60 —— 两套 rubric 不能混用
+# judge 默认 --db cruxline.db：每次判定都会把结果落库（机判/人判分表，历史不覆盖）。
+# 只想看分数、不想留痕就把它指到临时库：--db /tmp/scratch.db
 # 2) 专家标注 30 条，先过一致性门槛（不达标不许上线当门禁）
 python -m cruxline.cli calibrate --traces traces.json --labels expert.json --min-kappa 0.6
 # 3) 每次发版比一次
@@ -72,8 +74,16 @@ python scripts/real_traces.py
 ```
 
 ```
-60 条真实轨迹：PASS 58 / FAIL 2
+60 条真实轨迹：PASS 59 / FAIL 1
 步数中位数 8，最多 804；结束原因 {'completed': 57, 'interrupted': 2, 'error': 1}
+
+各规则命中次数（0 分的规则才计入）：
+  read_before_write            6 条    10%
+  no_loop                      1 条     2%
+  turn_completed               1 条     2%
+  error_recovered              1 条     2%
+  produced_answer              1 条     2%
+  verify_after_write           1 条     2%
 ```
 
 真实数据改掉了我两条想当然的规则：
@@ -83,23 +93,32 @@ python scripts/real_traces.py
 | `tool_diversity`：只用一种工具 = 没找对路 | 1829 次 bash vs 69 次 read —— 编码 agent 的工作**本来就**在 shell 里 | 换成 `verify_after_write`：改完文件之后有没有任何验证动作 |
 | 回合没走到 `completed` 就算失败 | `interrupted` 是用户/压缩打断，不是 agent 的错 | 只有 `error` 才硬否决 |
 
-编码 agent rubric（权重合计 1.0，只有一条致命项）：
+编码 agent rubric（`rubrics.agent_rubric()`，权重合计 1.0，**两个**致命项）：
 
 | 规则 | 权重 | 致命 | 抓什么 |
 | --- | --- | --- | --- |
-| `turn_completed` | 0.15 | ✅ | 回合异常结束（`error`） |
-| `no_loop` | 0.20 | | 同一 (工具, 参数) 连续重复 ≥3 次 |
-| `retry_after_error_changed` | 0.20 | | 报错后原封不动重试 |
-| `read_before_write` | 0.15 | | 没读过就 edit |
-| `produced_answer` | 0.15 | | 没有结尾答复 |
-| `verify_after_write` | 0.15 | | 末次写之后没有任何验证 |
+| `turn_completed` | 0.15 | ✅ | 回合异常结束（`reason=error` 或 `aborted`）；`interrupted` 不扣 |
+| `error_recovered` | 0.25 | ✅ | 报错后既没补救也没说明失败，仍照常给出结论 |
+| `no_loop` | 0.15 | | 同一 (工具, 参数) 连续重复 ≥3 次 |
+| `retry_after_error_changed` | 0.15 | | 报错后原封不动重试 |
+| `read_before_write` | 0.10 | | 没读过就 edit |
+| `produced_answer` | 0.10 | | 没有结尾答复 |
+| `verify_after_write` | 0.10 | | 末次写之后没有任何验证 |
 
-真实命中的两条例外（是产物，不是噪声）：
+（这张表由 `agent_rubric()` 生成，测试 `tests/test_review_r3.py::test_readme_rubric_table_matches_code` 逐行比对代码，手抄漂移会红。）
+
+真实轨迹上的两种样本（都是产物，不是噪声）—— **分数低不等于 FAIL，硬否决才是分水岭**：
 
 ```
-session-f0014d4b-#t141  score=0.700 FAIL
+session-f0014d4b-#t141  score=0.800 PASS
   - read_before_write:  未读取就编辑 .../g24_davis19_tail/PROVENANCE.md
   - verify_after_write: 2 次写，末次写之后没有任何验证动作
+  ↑ 两条规则扣光，总分仍在阈值 0.75 之上 —— 这正是「硬否决」要解决的问题
+
+session-f0014d4b-#t2    score=0.600 FAIL  [硬否决: turn_completed,error_recovered]
+  - turn_completed:  回合异常结束（error）
+  - error_recovered: 工具报错后既未补救也未说明失败，仍照常给出结论
+  ↑ 两票否决：回合没走完 + 报错后照常下结论
 ```
 
 ## 架构

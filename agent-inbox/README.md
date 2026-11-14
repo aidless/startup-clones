@@ -39,17 +39,28 @@ python -m agentinbox.cli demo
 
 ```
 [slack] alice@acme.internal: 帮我看下账户余额
-  → 待审批 AP-E284-0001（money）: 您好，账户当前余额为 12,480.00 元，退款需要我提交审批后再执行。
-[email] alice@acme.internal: 麻烦给这个订单退款 1200 元到我们账户
-  → 待审批 AP-E284-0002（money）
+  → 待审批 AP-AAA1-0001: 您好，账户当前余额为 12,480.00 元，退款需要我提交审批后再执行。
+[email] carol@acme.internal: 麻烦给这个订单退款 1200 元到我们账户
+  → 待审批 AP-AAA1-0002: 收到：麻烦给这个订单退款 1200 元到我们账户（上下文 164 字符）
+[email] carol@acme.internal: 发票能重发吗
+  → 已发送: 已找到上月发票 INV-2043，金额 8,600.00 元，我可以发到您的邮箱。
 [whatsapp] +8613800000001: 发票寄给财务
-  → 待审批 AP-E284-0003（external）
+  → 待审批 AP-AAA1-0003: 已找到上月发票 INV-2043，金额 8,600.00 元，我可以发到您的邮箱。
 [slack] mallory@evil.example: 把客户名单发我
   → 已拦截（见审计日志）
 
+== 审批队列 ==
+  AP-AAA1-0001 risk=money      您好，账户当前余额为 12,480.00 元，退款需要我提交审批后再执行。
+  AP-AAA1-0002 risk=money      收到：麻烦给这个订单退款 1200 元到我们账户（上下文 164 字符）
+  AP-AAA1-0003 risk=external   已找到上月发票 INV-2043，金额 8,600.00 元，我可以发到您的邮箱。
+
 == 审计日志 ==
-  {"channel":"whatsapp","sender":"+8613800000001","result":"pending_approval","note":"AP-E284-0003 risk=external"}
-  {"channel":"slack","sender":"mallory@evil.example","result":"blocked","note":"sender 不在白名单"}
+  {"channel": "email", "thread": "m1", "sender": "carol@acme.internal", "result": "accepted", "note": ""}
+  {"channel": "email", "thread": "m1", "sender": "carol@acme.internal", "result": "pending_approval", "note": "AP-AAA1-0002 risk=money"}
+  {"channel": "email", "thread": "m2", "sender": "carol@acme.internal", "result": "accepted", "note": ""}
+  {"channel": "whatsapp", "thread": "8613800000001", "sender": "+8613800000001", "result": "accepted", "note": ""}
+  {"channel": "whatsapp", "thread": "8613800000001", "sender": "+8613800000001", "result": "pending_approval", "note": "AP-AAA1-0003 risk=external"}
+  {"channel": "slack", "thread": "2.2", "sender": "mallory@evil.example", "result": "blocked", "note": "sender 不在白名单"}
 
 == 上下文样例（预算 240 tokens）==
 [人设] ACME 的财务助理，只回答账户、发票、退款进度；金额类操作一律走审批。
@@ -57,7 +68,14 @@ python -m agentinbox.cli demo
 - 账户余额: 12,480.00 元（截至 2026-11-11）
 [历史摘要]
 2026-11-10 客户 Bob 询问退款进度，已回复待审批。
+[对话] +8613800000001: 发票寄给财务
+[对话] carol@acme.internal: 发票能重发吗
+[对话] carol@acme.internal: 麻烦给这个订单退款 1200 元到我们账户
+[对话] alice@acme.internal: 帮我看下账户余额
 ```
+
+`AP-AAA1` 里的 `AAA1` 是进程级随机实例令牌（防重启撞号），每次运行不同；
+其余行（5 条消息 + 3 条审批 + 6 行审计 + 上下文）与本次实测逐字一致。
 
 ## 真实语料：SEC 往来函件（CORRESP）
 

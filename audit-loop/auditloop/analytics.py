@@ -220,11 +220,16 @@ def cash_ratio_series(s: Series) -> dict[int, float]:
 
 
 def _items(values: dict[int, float], *, name: str, label: str, unit: str,
-           check: str, findings: list[Finding]) -> list[Item]:
+           check: str, findings: list[Finding], needs_prior: bool = False) -> list[Item]:
     """把逐年指标摊成逐项 Item；判定与 detail 直接复用 run_all 的 Finding。
 
     判定不在这里另写一套阈值 —— 否则 CLI 与程序本身迟早给出相反的结论
     （正是审查里 P1-d 那类「注释与实现不一致」的近亲）。
+
+    `needs_prior`：这个指标本身是不是「同比」量。毛利率、现金含量是**某年的水平值**，
+    首年没有上期就无从判断它「变没变」，必须报未判定；而应收增速差每个数本身
+    就已经是同比结果，首条不需要上期。原实现一刀切 `status="flag" if f else "ok"`，
+    把「没查」写成了「正常」。
     """
     idx = {(f.check, f.ref): f for f in findings}
     years = sorted(values)
@@ -233,6 +238,14 @@ def _items(values: dict[int, float], *, name: str, label: str, unit: str,
         prev_y = years[i - 1] if i else None
         cur = values[y]
         prior = values[prev_y] if prev_y is not None else None
+        if needs_prior and prior is None:
+            out.append(Item(
+                name=name, label=label, ref=str(y), prior_ref="",
+                current=_round(cur, unit), prior=None, change=None,
+                unit=unit, status="insufficient",
+                detail="无可比上期，未做同比判定",
+            ))
+            continue
         f = idx.get((check, f"FY{y}"))
         out.append(Item(
             name=name, label=label, ref=str(y),
@@ -253,16 +266,19 @@ def assess(s: Series) -> list[Item]:
     命令行必须把「没查」说出来。
     """
     findings = run_all(s)
+    # 第三个元素 = 这个指标是不是「同比」量（首年没有上期就必须报未判定）
     specs = (
         ("revenue_vs_receivables", "应收增速差", "pp",
-         "analytics.revenue_vs_receivables", revenue_gap_series(s)),
-        ("gross_margin", "毛利率", "%", "analytics.gross_margin_trend", margin_series(s)),
-        ("cash_conversion", "现金含量", "x", "analytics.cash_conversion", cash_ratio_series(s)),
+         "analytics.revenue_vs_receivables", revenue_gap_series(s), False),
+        ("gross_margin", "毛利率", "%", "analytics.gross_margin_trend",
+         margin_series(s), True),
+        ("cash_conversion", "现金含量", "x", "analytics.cash_conversion",
+         cash_ratio_series(s), True),
     )
     out: list[Item] = []
-    for name, label, unit, check, values in specs:
+    for name, label, unit, check, values, needs_prior in specs:
         out.extend(_items(values, name=name, label=label, unit=unit,
-                          check=check, findings=findings)
+                          check=check, findings=findings, needs_prior=needs_prior)
                    or [Item(name=name, label=label, ref="", prior_ref="",
                             current=None, prior=None, change=None, unit=unit,
                             status="insufficient")])

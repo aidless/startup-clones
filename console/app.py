@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from dataclasses import asdict
 from pathlib import Path
 
@@ -78,28 +79,44 @@ def geo(samples: int = Query(6, ge=2, le=12)) -> JSONResponse:
     })
 
 
+# 每个请求线程一份 filing-lens 服务实例（各自持有独立的 sqlite 连接）。
+#
+# sqlite 连接不是线程安全的：`check_same_thread=False` 只关掉了检查，没有加锁。
+# 模块级共享一个 Answerer 时，同一连接上并发 `execute().fetchall()` 会串游标，
+# 表现为「HTTP 200 + 错误数字」（实测 8 线程 ×50 次：17 异常 / 24 错值，
+# 2019 年营收 640.40B 被读成 229.23B），比崩溃更难发现。
+# 所以缓存按线程分区：同一线程内复用（省掉重复解析 10-K），跨线程绝不共享连接。
+_FILING_SERVICES = threading.local()
+
+
+def _filing_service(cik: str, doc: Path, data: Path):
+    cache = getattr(_FILING_SERVICES, "cache", None)
+    if cache is None:
+        cache = _FILING_SERVICES.cache = {}
+    key = (cik, doc.stem)
+    if key not in cache:
+        from filinglens import edgar, facts, index
+        from filinglens.answer import Answerer
+
+        _, chunks, _ = edgar.parse(doc.read_text(errors="ignore"), doc=doc.stem)
+        conn = None
+        facts_path = data / f"{cik}_facts.json"
+        if facts_path.exists():
+            conn = facts.load_companyfacts(json.loads(facts_path.read_text()))
+        cache[key] = (Answerer(chunks, conn), index.BM25Index().add(chunks), len(chunks))
+    return cache[key]
+
+
 @app.get("/api/filing")
 def filing(q: str = Query("营收多少", min_length=2),
            cik: str = Query("0000320193")) -> JSONResponse:
-    from filinglens import edgar, facts, index
-    from filinglens.answer import Answerer
-
     data = ROOT / "filing-lens" / "data"
     hits = sorted(data.glob(f"{cik}_10k_*.htm"))
     if not hits:
         return JSONResponse({"error": "data/ 下没有该 CIK 的 10-K，先跑 filing-lens/scripts/fetch_edgar.py",
                              "status": "no_data"}, status_code=200)
     doc = hits[-1]
-    _cache = getattr(filing, "_cache", {})
-    if cik not in _cache:
-        _, chunks, _ = edgar.parse(doc.read_text(errors="ignore"), doc=doc.stem)
-        conn = None
-        facts_path = data / f"{cik}_facts.json"
-        if facts_path.exists():
-            conn = facts.load_companyfacts(json.loads(facts_path.read_text()))
-        _cache[cik] = (Answerer(chunks, conn), index.BM25Index().add(chunks), len(chunks))
-        filing._cache = _cache
-    answerer, _, n_chunks = _cache[cik]
+    answerer, _, n_chunks = _filing_service(cik, doc, data)
 
     r = answerer.ask(q)
     return JSONResponse({

@@ -146,8 +146,17 @@ def _read_before_write(t: Trace) -> tuple[float, str]:
 
 
 def _turn_completed(t: Trace) -> tuple[float, str]:
+    """回合是否正常走完。
+
+    判据是「结束原因」，不是某个导出器才会写的布尔字段：只认 `aborted` 时，
+    一条 `reason=error` 却没有 `aborted` 的轨迹会拿满 0.15 分、还打印
+    「结束原因 error」—— 读日志的人以为它被抓了，实际一分没扣。
+    `interrupted` 是用户/压缩打断，不是 agent 的错，仍给满分。
+    """
     reason = t.meta.get("reason") or ("aborted" if t.meta.get("aborted") else "completed")
-    return (0.0, f"回合异常结束（{reason}）") if t.meta.get("aborted") else (1.0, f"结束原因 {reason}")
+    if t.meta.get("aborted") or reason == "error":
+        return 0.0, f"回合异常结束（{reason}）"
+    return 1.0, f"结束原因 {reason}"
 
 
 def _produced_answer(t: Trace) -> tuple[float, str]:

@@ -29,8 +29,9 @@ class BrandStats:
         return round(self.mentions / total, 4) if total else 0.0
 
     @property
-    def avg_position(self) -> float:
-        return round(sum(self.positions) / len(self.positions), 2) if self.positions else 0.0
+    def avg_position(self) -> float | None:
+        """零提及时是 None，不是 0.0 —— 位次数字越小越好，0.0 看着像第一名。"""
+        return round(sum(self.positions) / len(self.positions), 2) if self.positions else None
 
 
 def brand_stats(mentions: list[Mention], prompts_total: int) -> dict[str, BrandStats]:
@@ -94,5 +95,13 @@ def gap_report(stats: dict[str, BrandStats], ours: str, competitors: list[str]) 
         "leader": best[0],
         "gap_sov": round(best[1].share_of_voice - our.share_of_voice, 4),
         "gap_visibility": round(best[1].prompts_seen - our.prompts_seen),
-        "gap_position": round(best[1].avg_position - our.avg_position, 2),
+        # 位次可能有一方零提及（None）：那时无从比较，不能拿 None 做减法，
+        # 也不能默认成 0.0 —— 0.0 位是最靠前的位置，会把「没提到」说成「第一名」。
+        "gap_position": _diff(best[1].avg_position, our.avg_position),
+        "our_position": our.avg_position,
+        "leader_position": best[1].avg_position,
     }
+
+
+def _diff(a: float | None, b: float | None) -> float | None:
+    return None if a is None or b is None else round(a - b, 2)

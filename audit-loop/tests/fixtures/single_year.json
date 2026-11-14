@@ -1,0 +1,11 @@
+{
+  "entity": "Single Year Co",
+  "years": {
+    "2026": {
+      "revenue": 1000.0,
+      "receivables": 300.0,
+      "gross_profit": 400.0,
+      "cfo": 250.0
+    }
+  }
+}

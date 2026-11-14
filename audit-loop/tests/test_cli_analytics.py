@@ -45,7 +45,8 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
 
 def load_json_output(*args: str) -> dict:
     proc = run_cli(*args, "--json")
-    assert proc.returncode in (0, 1), f"--json 跑失败：rc={proc.returncode}\n{proc.stderr}"
+    # 3 = 跑完了但一条指标都没判定成（见 README「退出码」）；那也是合法输出
+    assert proc.returncode in (0, 1, 3), f"--json 跑失败：rc={proc.returncode}\n{proc.stderr}"
     return json.loads(proc.stdout)
 
 
@@ -161,9 +162,12 @@ def test_facts_is_required(tmp_path):
 
 def test_missing_series_is_reported_as_insufficient():
     """只有收入一列时，三条程序都算不出来 —— 必须显式写「数据不足」，
-    否则与「跑了且没问题」在输出上完全一样（README 已知边界里点过这一条）。"""
+    否则与「跑了且没问题」在输出上完全一样（README 已知边界里点过这一条）。
+
+    退出码**从 0 改成 3**（R3 审查 P0-1/P1-3）：0 的含义是「查过了，没问题」，
+    一条指标都没算成时用它，等于把「没查」报成「查过且干净」。"""
     proc = run_cli("analytics", "--facts", str(SPARSE))
-    assert proc.returncode == 0
+    assert proc.returncode == 3
     data = json.loads(run_cli("analytics", "--facts", str(SPARSE), "--json").stdout)
     assert len(data["items"]) == 3
     assert all(i["status"] == "insufficient" and i["flag"] is False for i in data["items"])

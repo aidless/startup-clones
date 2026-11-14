@@ -39,26 +39,37 @@ class Runtime:
         self.registry = registry
         self.ledger = ledger
         # 已执行的请求结果：重投直接回放，不重跑 handler。
-        # 只靠 ledger 去重是不够的 —— 那拦的是计费，handler 已经又跑了一遍。
+        # 这只是**进程内缓存**；权威在 ledger（usage 表按 (buyer, request_id) 记执行结果）。
+        # 只靠进程内字典时，重启 / 换 worker / 多副本下同一 request_id 会重跑 handler。
         self._done: dict[tuple[str, str], Execution] = {}
 
     def execute(self, buyer: str, agent_id: str,
                 handler: Callable[[str], tuple[str, int]],
                 request_id: str, needs: tuple[str, ...] = (),
                 tokens: int = 0) -> Execution:
-        try:
-            v = self.registry.get(agent_id, self.registry.granted_version(buyer, agent_id))
-        except RegistryError as exc:
-            return Execution(request_id, agent_id, "-", buyer, False, error=f"未安装: {exc}")
-
-        # 先验安装凭据，再验权限，最后才执行 —— 顺序不能换，否则会先消耗模型调用
+        # 幂等判断先于一切：已落库的请求直接回放（不验权限、不再执行、不再计费）。
+        # 否则「重投」在重启后会被当成新请求，handler 的副作用（发邮件、动账）再发生一次。
         seen = self._done.get((buyer, request_id))
+        if seen is None and self.ledger is not None:
+            row = self.ledger.replay(buyer, request_id)
+            if row is not None:
+                seen = Execution(request_id, row.agent_id, row.version, buyer, row.ok,
+                                 output=row.output, error=row.error,
+                                 charged_cents=row.cents, duplicate=True)
+                self._done[(buyer, request_id)] = seen
         if seen is not None:
             replay = Execution(request_id, agent_id, seen.version, buyer, seen.ok,
                                output=seen.output, error=seen.error,
                                charged_cents=seen.charged_cents, duplicate=True)
             _audit(replay, "gate", result="duplicate", dedup=True)
             return replay
+
+        try:
+            v = self.registry.get(agent_id, self.registry.granted_version(buyer, agent_id))
+        except RegistryError as exc:
+            return Execution(request_id, agent_id, "-", buyer, False, error=f"未安装: {exc}")
+
+        # 先验安装凭据，再验权限，最后才执行 —— 顺序不能换，否则会先消耗模型调用
 
         ex = Execution(request_id, agent_id, v.version, buyer, False)
         _audit(ex, "resolve", version=v.version, status=v.status)
@@ -92,7 +103,8 @@ class Runtime:
             try:
                 record = self.ledger.record(
                     buyer, agent_id, v.version, ex.request_id,
-                    units=units if v.manifest.pricing.kind != "per_token" else max(units, tokens))
+                    units=units if v.manifest.pricing.kind != "per_token" else max(units, tokens),
+                    ok=ex.ok, output=ex.output, error=ex.error)
             except KeyError as exc:
                 # 计量器不认识这个清单（没 register）→ 原实现让 KeyError 穿透到调用方，
                 # 此时 handler 已经跑完、模型调用已经花掉，调用方却拿到裸 KeyError。

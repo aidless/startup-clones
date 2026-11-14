@@ -78,8 +78,15 @@ cli.py        run / report / demo
 - **份额是采样读数，不是确定性数字。** 真实模型每次回答都会变（MockProvider 也把 `run_index` 放进随机种子来模拟这一点，`providers.py:48-53`），报表只给点估计、不给区间（`report.py:48`、`report.py:56-66`）。样本量 = 提示词数 × 采样次数：8 条提示词时，多一条提及就把份额推 12.5 个百分点，位次和情感的抖动同理。
 - **`run` 与 `report --run-id` 现在同口径（本次修好，旧库不自动迁移）。** 曾经的主键是 `(run_id, prompt_id, brand)`，同一 prompt 的多次采样被压成一条：内存 72 条 mention、落库只剩 32 条，Acme 的 SoV 34.72% → 34.38%、平均位次 1.52 → 1.27。现在主键带上 `run_index`（`store.py:43-52`），实测 12 × 3 两条路径都是 72 条、34.7%、1.52。**但**：这次修复之前生成的 `.db` 不会自动补 `run_index`，里面的 mentions 仍是压扁的，重跑是最省事的办法。
 - **两条命令共用同一个装配函数（2026-11-14）。** `run` 落库后不再用内存里的 `stats` 渲染，而是 `store.load_run` → `view.assemble` 从库里读回来装配（`cli.py:45`）；`report --run-id` 走同一个 `view.load_view`（`cli.py:64`、`view.py:61`）。装配本身只有一份：`view.assemble`（`view.py:43`），分母写死为「answers 里真出现过的 prompt_id 条数」（`view.py:51`）——原先 `run` 用 `len(ps)`、`report` 用 `len(ids)`，只在每次采样都成功时碰巧相等。并列行（同提及数、同引用占比）现在按品牌名/域名兜底定序（`report.py:60`、`report.py:107`），否则内存顺序与 SQLite 的 `ORDER BY prompt_id,run_index` 顺序不同会让同一批数据印出不同行序（实测第 32 行 `zhihu.com` vs `forrester.com`）。markdown 里没有 run_id / created_at，所以两条路径的报表是**逐字节**相等（`tests/test_single_path.py`）；run 级元数据只存在 runs 表里。
-- **「领先 / 落后」只按声量一个维度说。** `report.py:71-90` 现在分三支：`gap_sov` 相等且出现率相同时印「持平」，小于 0 印「领先」，大于 0 印「落后」；`gap_sov = 竞品 SoV − 我方 SoV`（`metrics.py:95`）。但「竞品」取的是 `--competitors` 里提及最多的那一个（`metrics.py:89`），不是我方与全场第一相比；SoV 落后而平均位次更好（或反之）时，文案只按 SoV 说一个方向，两个指标打架要回表自己看。
-- **未被提及的品牌不出现在表里，`avg_position` 在零提及时是 `0.0` 而不是空**（`metrics.py:33`、`metrics.py:41-42`），下游若直接拿它排序或求差，`0.0` 会被当成「位次最好」。
+- **「领先 / 落后」三个维度各判各的方向。** 差距句按三项分别措辞（`report.py:_gap_lines`）：
+  声量用**百分点**（`gap_sov = 竞品 SoV − 我方 SoV`，为正=落后）、出现率用**条提示词**
+  （为正=我们少出现）、平均位次用**位**（为正=我们名次更靠前，因为位次数字越小越好）。
+  旧版按 `gap_sov` 一句话决定「领先/落后」再把另外两项取反照抄，于是印出
+  「出现率多 **-1** 条提示词」「平均位次领先 **-0.8** 位」这种负数量的领先。
+  「竞品」仍取 `--competitors` 里提及最多的那一个（`metrics.py:89`），不是全场第一——这点没变。
+- **未被提及的品牌不出现在表里；零提及的 `avg_position` 是 `None`（原来返回 `0.0`）**（`metrics.py:31-34`、`metrics.py:90-104`）。
+  位次数字越小越好，所以 `0.0` 会被下游读成「第一名」——旧版就是这么错的。现在报表里印 `—`，JSON 里是 `null`，
+  差距句里若有一方零提及则写「平均位次无从比较」，不做 `None` 减法。
 - MockProvider 的品牌顺序是哈希打散的（`providers.py:49-53`），只用来验证抽取/排名/份额链路，不能当语义结论；引用源是拿 URL 正则从**回答正文**里抓出来的（`providers.py:106-107`、`providers.py:26`），正文没写 URL 时第 4 节就是「无引用源」（`report.py:102-109`），模型在正文里不链源并不等于它没依据。
 
 MIT License.
@@ -118,7 +125,7 @@ MIT License.
 | 现象 | 原因 | 修法 |
 |---|---|---|
 | qwen3:8b 八条全空，份额全 0 | 混合推理模型默认先吐 thinking，把 `num_predict` 吃光 | 请求体加 `think=false`；空返回抛错，不许当「没提到」 |
-| `--provider ollama` 未接线 | CLI 的 choices 里没这个值 | 补上，并把 `OLLAMA_HOST` 作为覆盖点 |
+| `--provider ollama` 空答案 | 混合推理模型把 `num_predict` 吃光（**接线本身是好的**，`cli.py` 的 choices 里有 `ollama`） | 请求体加 `think=false`；`OLLAMA_HOST` 可覆盖默认 `127.0.0.1:11434` |
 
 把「空答案」和「没提到该品牌」混为一谈，会让份额分母虚高——这是 GEO 类产品最隐蔽的一类错。
 
