@@ -219,3 +219,44 @@ def test_meta_rejects_glob_cik(tmp_path):
     c = TestClient(server.app)
     r = c.get("/api/meta", params={"cik": "*"})
     assert r.status_code in (400, 404), f"通配符把任意文件以 {r.status_code} 返回了"
+
+
+def test_sec_user_agent_can_be_overridden_by_env(monkeypatch):
+    """SEC 要求 UA 里带真实联系方式；开源后换人用必须能改成自己的邮箱。
+
+    判据：设 SEC_UA 后，ingest 发出去的请求头逐字等于环境变量值（不是拼接的）。
+    """
+    import importlib
+
+    monkeypatch.setenv("SEC_UA", "acme-audit/1.0 (contact: cpa@acme.example)")
+    from filinglens import ingest as ingest_mod
+
+    reloaded = importlib.reload(ingest_mod)
+    try:
+        assert reloaded.UA == "acme-audit/1.0 (contact: cpa@acme.example)"
+        seen = {}
+
+        class _Resp:
+            status = 200
+            headers = {}
+            _chunks = [b"<html></html>", b""]
+
+            def read(self, n=-1):
+                return self._chunks.pop(0)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def _fake_urlopen(req, timeout=None):
+            seen["ua"] = req.get_header("User-agent")
+            return _Resp()
+
+        monkeypatch.setattr(reloaded.urllib.request, "urlopen", _fake_urlopen)
+        reloaded.download("https://www.sec.gov/x.htm")
+        assert seen["ua"] == "acme-audit/1.0 (contact: cpa@acme.example)"
+    finally:
+        monkeypatch.delenv("SEC_UA", raising=False)
+        importlib.reload(ingest_mod)

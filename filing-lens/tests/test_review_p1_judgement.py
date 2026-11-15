@@ -21,6 +21,15 @@ from filinglens.index import BM25Index, Hit, coverage
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
+# `data/` 是被 .gitignore 掉的 164MB SEC 语料，干净检出里没有它；补齐命令写进 reason。
+_HOW_TO_FETCH = ("先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+                 "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
+
+
+def _has(cik: str) -> bool:
+    return ((DATA / f"{cik}_facts.json").exists()
+            and bool(list(DATA.glob(f"{cik}_10k_*.htm"))))
+
 
 # ---------------- P1-1 概念覆盖率不许被通用词刷满 ----------------
 
@@ -64,7 +73,7 @@ def test_equivalent_alone_is_not_headcount():
     assert cov < 0.45
 
 
-@pytest.mark.skipif(not DATA.exists(), reason="需要真实语料 data/")
+@pytest.mark.skipif(not _has("0000320193"), reason=f"缺少 data/ 里 Apple 的真实申报；{_HOW_TO_FETCH}")
 def test_concept_coverage_inflation_is_contained_on_real_corpus():
     """真实 419 chunk 语料上复算：只有含真员工词的段落才允许拿满覆盖。
     修前 39 个 chunk 拿 1.0；修后必须显著下降，且降幅来自通用词而非真答案。"""

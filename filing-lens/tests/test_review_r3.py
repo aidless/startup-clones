@@ -19,9 +19,16 @@ DATA = ROOT / "data"
 
 
 def _real(tag: str):
-    """加载 data/ 里的真实申报；文件不在就跳过（测试不联网）。"""
+    """加载 data/ 里的真实申报；文件不在就跳过（测试不联网）。
+
+    `data/` 是被 .gitignore 掉的 164MB SEC 语料，别人的干净检出里没有它；
+    补齐命令写进 skip reason，别让后来人猜。
+    """
     if not (DATA / f"{tag}_facts.json").exists() or not list(DATA.glob(f"{tag}_10k_*.htm")):
-        pytest.skip(f"data/ 里没有 {tag} 的真实申报")
+        pytest.skip(
+            f"data/ 里没有 {tag} 的真实申报；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
     return corpus.load(str(DATA), tag)
 
 
@@ -126,6 +133,7 @@ def test_apple_revenue_series_is_annual_only():
 
 def test_metric_command_shows_no_annual_from_quarter_mixup(capsys):
     """真实命令：`metric revenue` 曾印出 FY2019 64.04B / FY2020 64.70B / YoY +465.4%。"""
+    _real("0000320193")            # 没有 data/ 就跳过，并给出抓取命令
     from filinglens import cli
     rc = cli.main(["metric", "revenue", "--facts",
                    str(DATA / "0000320193_facts.json")])

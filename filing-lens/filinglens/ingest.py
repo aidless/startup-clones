@@ -17,6 +17,7 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 import zlib
@@ -24,7 +25,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-UA = "filing-lens-research/0.1 (contact: research@example.com)"
+DEFAULT_UA = "filing-lens-research/0.1 (contact: research@example.com)"
+# SEC 的公平访问政策要求 User-Agent 里带真实联系方式，换人用就得换成自己的。
+UA = os.environ.get("SEC_UA") or DEFAULT_UA
 ALLOWED_HOSTS = {"www.sec.gov", "sec.gov", "data.sec.gov"}
 MAX_BYTES = 40 * 1024 * 1024
 DEFAULT_DATA = Path(__file__).resolve().parent.parent / "data"

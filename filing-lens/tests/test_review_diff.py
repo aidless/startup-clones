@@ -35,14 +35,32 @@ rd = _load()
 DATA = ROOT / "data"
 
 
+def _needs(cik: str) -> Path:
+    """`data/` 是被 .gitignore 掉的 164MB SEC 语料，干净检出里没有它。
+
+    只跳过真正要读真实申报的用例——本文件里那些拿合成 sqlite 跑的用例
+    （`_conn()` + `rd.check_*`）不依赖 data/，必须继续跑。
+
+    补齐：
+        cd filing-lens && python3 scripts/batch_bench.py
+    （只想用本地已经抓下来的文件时加 `--no-fetch`）
+    """
+    if not (DATA / f"{cik}_facts.json").exists() or not list(DATA.glob(f"{cik}_10k_*.htm")):
+        pytest.skip(
+            f"缺少 {DATA}/{cik}_10k_*.htm 与 {cik}_facts.json；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
+    return DATA
+
+
 @pytest.fixture(scope="module")
 def broadcom():
-    return rd.build("0001730168", DATA)
+    return rd.build("0001730168", _needs("0001730168"))
 
 
 @pytest.fixture(scope="module")
 def meta():
-    return rd.build("0001318605", DATA)
+    return rd.build("0001318605", _needs("0001318605"))
 
 
 # ---------- 1. 现金流量口径：双向 ----------
@@ -56,7 +74,7 @@ def test_real_broadcom_cash_sentence_is_not_flagged(broadcom):
 
 def test_injected_cash_defect_is_flagged():
     """把 Broadcom 那句的经营现金流换成现金余额 → 必须抓，且指出对不上的两个数。"""
-    rep = rd.build("0001730168", DATA, inject=(
+    rep = rd.build("0001730168", _needs("0001730168"), inject=(
         "27,537 million in net cash provided by operating activities",
         "16,178 million in net cash provided by operating activities",
     ))
@@ -114,7 +132,7 @@ def test_money_parse(text, expect):
 
 def test_inject_refuses_missing_anchor():
     with pytest.raises(SystemExit):
-        rd.build("0001730168", DATA, inject=("这句话原文里不存在", "x"))
+        rd.build("0001730168", _needs("0001730168"), inject=("这句话原文里不存在", "x"))
 
 
 # ---------- 7. 跨年比较 / 整元金额：小盘 10-K 的两个真实坑 ----------
@@ -258,12 +276,12 @@ def test_text_percent_skips_when_the_base_crosses_zero():
 
 @pytest.fixture(scope="module")
 def cisco():
-    return rd.build("0000858877", DATA)
+    return rd.build("0000858877", _needs("0000858877"))
 
 
 @pytest.fixture(scope="module")
 def meta_platforms():
-    return rd.build("0001326801", DATA)
+    return rd.build("0001326801", _needs("0001326801"))
 
 
 def test_quarterly_percent_is_not_compared_to_annual(cisco):
@@ -289,7 +307,7 @@ def test_sequential_seasonality_percent_is_not_flagged(meta_platforms):
 
 def test_injected_percent_defect_is_still_flagged():
     """正对照：把全年同比那处的 12% 改成 42% → 必须抓，别把守卫做成一刀切屏蔽。"""
-    rep = rd.build("0000858877", DATA, inject=(
+    rep = rd.build("0000858877", _needs("0000858877"), inject=(
         "an increase of 12% compared with fiscal 2025",
         "an increase of 42% compared with fiscal 2025",
     ))

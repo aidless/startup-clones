@@ -1,11 +1,46 @@
 name: ci
+
 on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 依赖
+        run: |
+          python -m pip install -U pip
+          pip install pytest "fastapi>=0.115,<1" "uvicorn[standard]>=0.30,<1" \
+                      openpyxl httpx beautifulsoup4 lxml
+
+      # data/ 是 164MB 的 SEC 语料，不进仓库；缺它时相关用例会自动 skip，
+      # 其余几百条照跑（见 filing-lens/README.md「先跑测试要备好语料」）。
+      - name: 单元/集成测试（根目录一次跑完七个项目）
+        run: python -m pytest
+
+      # e2e 会自己挑语料：有 data/ 用 22 份全量，没有就退到入库的 data-prospects/
+      - name: 端到端串联（真跑子进程）
+        run: python scripts/e2e.py
+
+      - name: 打磨判据（README/边界/CLI/卫生）
+        run: python scripts/polish_audit.py
+
+  corpus:
+    # 全语料矩阵要 22 份真 10-K（164MB）。只在手动触发时抓取并比对基线，
+    # 避免每次 PR 都去敲 SEC 的门。
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,12 +50,11 @@ jobs:
       - name: 依赖
         run: |
           python -m pip install -U pip
-          pip install pytest fastapi "uvicorn[standard]" openpyxl httpx
-      - name: 单元/集成测试（根目录一次跑完七个项目）
-        run: python -m pytest
-      - name: 端到端串联（真跑子进程）
-        run: python scripts/e2e.py
-      - name: 全语料解析矩阵（22 份 10-K，与基线对比）
+          pip install pytest httpx beautifulsoup4 lxml
+      - name: 抓回 22 份 10-K
+        env:
+          # SEC 的公平访问政策要求 UA 里带真实联系方式，换成你自己的
+          SEC_UA: "filing-lens-ci (contact: your@email)"
+        run: cd filing-lens && python scripts/batch_bench.py
+      - name: 解析矩阵 vs 基线
         run: python scripts/corpus_matrix.py --baseline docs/corpus-matrix.json
-      - name: 打磨判据（README/边界/CLI/卫生）
-        run: python scripts/polish_audit.py

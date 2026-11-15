@@ -94,9 +94,27 @@ def test_percent_forms_all_parse():
         assert rd._pct_value(ms[0]) == expect, (sent, [m.group(0) for m in ms])
 
 
+def _needs(cik: str) -> Path:
+    """`data/` 是被 .gitignore 掉的 164MB SEC 语料，干净检出里没有它。
+
+    只有下面那条集成用例读真实申报；本文件其余用例都在字符串/合成数据上跑，
+    不受影响（不能整模块 skip）。
+
+    补齐：
+        cd filing-lens && python3 scripts/batch_bench.py
+    （只用本地已经抓下来的文件时加 `--no-fetch`）
+    """
+    if not (DATA / f"{cik}_facts.json").exists() or not list(DATA.glob(f"{cik}_10k_*.htm")):
+        pytest.skip(
+            f"缺少 {DATA}/{cik}_10k_*.htm 与 {cik}_facts.json；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
+    return DATA
+
+
 @pytest.fixture(scope="module")
 def cisco():
-    return rd.build("0000858877", DATA)
+    return rd.build("0000858877", _needs("0000858877"))
 
 
 def test_cisco_total_revenue_percent_is_reported_as_checked(cisco):

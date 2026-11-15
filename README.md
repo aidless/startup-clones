@@ -2,11 +2,11 @@
 
 六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**409 个测试，0 个 mock 掉的断言，全部离线可跑。**
+**565 个测试，0 个 mock 掉的断言，全部离线可跑**（需要 164MB 语料的 41 条在干净检出里自动 skip，见 `filing-lens/README.md`「先跑测试要备好语料」）。
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 560 passed
+make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 565 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 make e2e       # 端到端串联：十个阶段跨六个项目真跑一次（约 40 秒）
 make matrix    # 全语料解析矩阵：22 份 10-K 逐份解析并与基线比对（约 2 分钟）
@@ -16,12 +16,12 @@ make matrix    # 全语料解析矩阵：22 份 10-K 逐份解析并与基线比
 
 | 目录 | 对标（融资事实） | 一句话内核 | 测试 |
 | --- | --- | --- | --- |
-| [`geo-radar/`](geo-radar) | The Prompting Company · 2026-11-03 $6.5M 种子 | 测「AI 推荐里有没有你」：提示词生成 → 多模型跑 → 提及抽取 → 站位报告 | 41 |
-| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 103 |
-| [`audit-loop/`](audit-loop) | Clark · 2026-11-02 $11M 种子（Touring Capital） | 给事务所的审计程序内核：银行调节/账龄/截止测试 → 例外清单 + 可归档 Excel 底稿 | 50 |
-| [`cruxline/`](cruxline) | Crux Labs · 2026-10-30 $6M+ 种子 | 把「专家觉得这算做好了」变成 rubric + kappa 校准 + 版本回归门禁，**致命项一票否决** | 61 |
-| [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 54 |
-| [`agent-store/`](agent-store) | Cowboy · 2026 年 $5M 种子 | agent 商店：不可变版本 + 最小授权 + 幂等计量 + 分成账单 | 44 |
+| [`geo-radar/`](geo-radar) | The Prompting Company · 2026-11-03 $6.5M 种子 | 测「AI 推荐里有没有你」：提示词生成 → 多模型跑 → 提及抽取 → 站位报告 | 53 |
+| [`filing-lens/`](filing-lens) | Finpilot · 2026-11-04 $10M A（Lobby Capital + Madrona） | 用大白话问上市公司财报：10-K 分段 → BM25 → XBRL 数字，**没有引用就不回答** | 156 |
+| [`audit-loop/`](audit-loop) | Clark · 2026-11-02 $11M 种子（Touring Capital） | 给事务所的审计程序内核：银行调节/账龄/截止测试 → 例外清单 + 可归档 Excel 底稿 | 71 |
+| [`cruxline/`](cruxline) | Crux Labs · 2026-10-30 $6M+ 种子 | 把「专家觉得这算做好了」变成 rubric + kappa 校准 + 版本回归门禁，**致命项一票否决** | 80 |
+| [`agent-inbox/`](agent-inbox) | Inkbox · 2026-11-09 $5.3M 种子（Peak XV） | 常驻消息渠道的 agent：准入 → 审批队列 → 预算化记忆 → 全程审计 | 75 |
+| [`agent-store/`](agent-store) | Cowboy · 2026 年 $5M 种子 | agent 商店：不可变版本 + 最小授权 + 幂等计量 + 分成账单 | 59 |
 
 
 ## 真实数据状态
@@ -92,7 +92,7 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-14）
 
-- 测试：**560 passed**（geo 53 / filing 155 / audit 71 / crux 80 / inbox 75 / store 59 / console 16 / go-to-market 8 / 根目录 tests 43）
+- 测试：**565 passed**（geo 53 / filing 156 / audit 71 / crux 80 / inbox 75 / store 59 / console 16 / 根目录契约测试 47；另 `go-to-market/` 是内部商业包，其 8 个测试只在源仓库跑，不随公开仓库发布）
   根目录 `python3 -m pytest` 一条命令跑完；`make test` 仍是逐项目跑（七个子项目）。
 - 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
   已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——

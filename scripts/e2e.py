@@ -27,9 +27,32 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CIK = "0000320193"                      # Apple：真实 10-K，data/ 里必有
-FILING_HTML = ROOT / "filing-lens" / "data" / f"{CIK}_10k_2026-09-26.htm"
-FILING_FACTS = ROOT / "filing-lens" / "data" / f"{CIK}_facts.json"
+
+# 语料选择：`data/`（22 份，164MB，.gitignore 掉的）优先；没有它就退到入库的
+# `data-prospects/`（三家小盘客户，随仓库发布）。两边都没有就报错并说明怎么补。
+FULL = ("0000320193", "2026-09-26")     # Apple：22 份语料在位时用它
+TRACKED = ("0001481504", "2026-06-30")  # XERIANT：随仓库发布的样本
+
+
+def resolve_corpus(root: Path = ROOT) -> tuple[Path, str, str]:
+    """返回 (语料目录, CIK, 期间)。判据见 tests/test_e2e_corpus.py。"""
+    filing = root / "filing-lens"
+    for sub, (cik, period) in ((("data"), FULL), (("data-prospects"), TRACKED)):
+        d = filing / sub
+        if (d / f"{cik}_10k_{period}.htm").exists() and (d / f"{cik}_facts.json").exists():
+            return d, cik, period
+    raise SystemExit(
+        "e2e 找不到可用的 10-K 语料。\n"
+        "  入库样本：filing-lens/data-prospects/（应随仓库发布，缺失说明检出不全）\n"
+        "  全量语料：cd filing-lens && python3 scripts/batch_bench.py --no-fetch 或"
+        " python3 scripts/batch_bench.py（真去 SEC 抓 22 份）\n"
+        "  也可以只抓一份：python3 -m filinglens.cli fetch 0000320193 --data data")
+
+
+def _fmt(values: list[str], tmp: Path, data_dir: Path, cik: str,
+         html: Path, facts: Path) -> list[str]:
+    return [str(v).format(tmp=tmp, root=ROOT, cik=cik, data=data_dir,
+                          html=html, facts=facts) for v in values]
 
 
 @dataclass
@@ -53,10 +76,11 @@ class Result:
         return self.code == 0 and all(e in self.out for e in self.step.expect)
 
 
-def _run(step: Step, tmp: Path, extra: dict[str, str] | None = None) -> Result:
+def _run(step: Step, tmp: Path, ctx: dict | None = None,
+         extra: dict[str, str] | None = None) -> Result:
     cwd = ROOT / step.project
-    argv = [str(a).format(tmp=tmp, root=ROOT, cik=CIK,
-                          html=FILING_HTML, facts=FILING_FACTS) for a in step.argv]
+    ctx = ctx or {}
+    argv = _fmt(step.argv, tmp, ctx["data"], ctx["cik"], ctx["html"], ctx["facts"])
     env = dict(os.environ, PYTHONIOENCODING="utf-8", **(extra or {}))
     p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
                        timeout=step.timeout, env=env)
@@ -65,7 +89,15 @@ def _run(step: Step, tmp: Path, extra: dict[str, str] | None = None) -> Result:
 
 def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
     """真跑一遍全链。返回 (是否全绿, 每步结果)。"""
-    results: list[Result] = []
+    evidence: list[Result] = []
+    data_dir, cik, period = resolve_corpus()
+    ctx = {
+        "data": data_dir,
+        "cik": cik,
+        "html": data_dir / f"{cik}_10k_{period}.htm",
+        "facts": data_dir / f"{cik}_facts.json",
+    }
+    results: list[Result] = evidence
     with tempfile.TemporaryDirectory(prefix="e2e-") as td:
         tmp = Path(td)
 
@@ -78,7 +110,7 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
              "--db", "{tmp}/geo.db", "--out", "{tmp}/geo.md"],
             expect=["run_id", "mentions"],
         )
-        r1 = _run(step_run, tmp)
+        r1 = _run(step_run, tmp, ctx)
         results.append(r1)
         m = re.search(r"run_id\s*:\s*(\S+)", r1.out)
         run_id = m.group(1) if m else ""
@@ -91,7 +123,7 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
              "--db", "{tmp}/geo.db", "--run-id", run_id or "missing"],
             expect=["AI 可见性周报"],
         )
-        r2 = _run(step_rep, tmp)
+        r2 = _run(step_rep, tmp, ctx)
         # 真交接的判据：run 说 Acme 被提了多少次，report 里 Acme 那行就得是同一个数
         # （品牌行带「←」标记，见 report.markdown_report）
         if acme:
@@ -104,14 +136,14 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
             [sys.executable, "-m", "filinglens.cli", "ask",
              "What was net income?", "--html", "{html}", "--facts", "{facts}"],
             expect=["[ok]"],
-        ), tmp))
+        ), tmp, ctx))
 
         # ---- 4 filing 差异表：同一份 CIK，商品化的那张表必须能出 ----
         results.append(_run(Step(
             "filing.diff", "filing-lens",
-            [sys.executable, "scripts/review_diff.py", "{cik}"],
+            [sys.executable, "scripts/review_diff.py", "{cik}", "--data", "{data}"],
             expect=["检查"],
-        ), tmp))
+        ), tmp, ctx))
 
         # ---- 5 cruxline：真实 60 条轨迹上跑 rubric，至少要有 PASS 判定 ----
         results.append(_run(Step(
@@ -119,7 +151,7 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
             [sys.executable, "-m", "cruxline.cli", "judge",
              "--traces", "data/traces.jsonl", "--db", "{tmp}/crux.db"],
             expect=["PASS"],
-        ), tmp))
+        ), tmp, ctx))
 
         # ---- 6 audit-loop：底稿必须真落盘（非空文件），不是只打了一屏字 ----
         r6 = _run(Step(
@@ -127,7 +159,7 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
             [sys.executable, "-m", "auditloop.cli", "run",
              "--out", "{tmp}/workpaper.xlsx"],
             expect=["例外"],
-        ), tmp)
+        ), tmp, ctx)
         results.append(r6)
 
         # ---- 7 agent-inbox / 8 agent-store：零配置演示，验关键段落 ----
@@ -135,12 +167,12 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
             "inbox.demo", "agent-inbox",
             [sys.executable, "-m", "agentinbox.cli", "demo"],
             expect=["审批队列", "审计日志"],
-        ), tmp))
+        ), tmp, ctx))
         results.append(_run(Step(
             "store.demo", "agent-store",
             [sys.executable, "-m", "agentstore.cli", "demo"],
             expect=["上架", "账单"],
-        ), tmp))
+        ), tmp, ctx))
 
         # 产物断言放在链末：前面都跑完才有这两份东西
         wp = tmp / "workpaper.xlsx"

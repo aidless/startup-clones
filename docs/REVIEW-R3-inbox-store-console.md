@@ -1,6 +1,6 @@
 # 第三轮审查：agent-inbox + agent-store + console
 
-输入：三个项目的 README 与源码。下表与下文每一条结论都对应一次实际运行的输出，命令统一在 `/home/liuzewen/F:\deepseek` 下先 `cd` 到该根、再 `cd startup-clones/<proj>` 执行。
+输入：三个项目的 README 与源码。下表与下文每一条结论都对应一次实际运行的输出，命令统一在 `<仓库根>` 下先 `cd` 到该根、再 `cd startup-clones/<proj>` 执行。
 
 行号说明：引用的 README 行号对应当前工作树版本（`agent-store/README.md` 含 statement 段的未提交改动）。
 

@@ -33,8 +33,8 @@ from auditloop.models import EXISTENCE, Entry, Finding  # noqa: E402
 def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """真起一个子进程跑 CLI。
 
-    不用 `-m auditloop.cli` + PYTHONPATH：工作区根名里有字面反斜杠和冒号
-    （`F:\deepseek`），冒号会被 PYTHONPATH 当分隔符切开，模块直接导入不到。
+    不用 `-m auditloop.cli` + PYTHONPATH：仓库根目录名若含冒号（某些 Windows 迁移
+    过来的路径就带），冒号会被 PYTHONPATH 当分隔符切开，模块直接导入不到。
     改用 `-c` 显式把包目录塞进 sys.path。
     """
     code = ("import sys; sys.path.insert(0, {p!r});"

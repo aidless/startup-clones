@@ -14,6 +14,24 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# 面板读的是 filing-lens 的真实语料（22 份 10-K，164MB，.gitignore 掉的）。
+FILING_DATA = ROOT.parent / "filing-lens" / "data"
+
+
+def _needs_filing() -> None:
+    """三条 filing 面板用例要真实 Apple 申报；干净检出里没有 data/ → 跳过。
+
+    补齐：
+        cd filing-lens && python3 scripts/batch_bench.py
+    （只用本地已经抓下来的文件时加 `--no-fetch`）
+    """
+    if not (FILING_DATA / f"{CIK}_facts.json").exists() \
+            or not list(FILING_DATA.glob(f"{CIK}_10k_*.htm")):
+        pytest.skip(
+            f"缺少 {FILING_DATA}/{CIK}_10k_*.htm 与 {CIK}_facts.json；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
+
 
 @pytest.fixture(scope="module")
 def app_mod():
@@ -43,6 +61,7 @@ def test_geo_shares_sum_to_one(client):
 
 
 def test_filing_refuses_without_citations(client):
+    _needs_filing()
     d = client.get("/api/filing", params={"q": "CEO 的生日是哪天"}).json()
     assert d["status"] == "insufficient_evidence"
     assert d["citations"] == []
@@ -50,6 +69,7 @@ def test_filing_refuses_without_citations(client):
 
 def test_filing_numeric_answer_carries_xbrl_citation(client):
     """单请求契约：数字答案必须带 XBRL 出处（并发正确性见下一条）。"""
+    _needs_filing()
     d = client.get("/api/filing", params={"q": "营收多少"}).json()
     assert d["status"] == "ok" and d["kind"] == "metric"
     assert d["citations"][0]["kind"] == "xbrl"
@@ -67,6 +87,7 @@ def test_filing_concurrent_requests_match_single_thread_baseline(app_mod):
     于是共享 sqlite 连接的竞态继续存在：同一连接 8 线程实测 17 次异常 /
     24 次错值（2019 营收 640.40B 被读成 229.23B，HTTP 仍 200）。
     """
+    _needs_filing()
     baseline = {}
     for q in QUESTIONS:
         r = app_mod.filing(q=q, cik=CIK)

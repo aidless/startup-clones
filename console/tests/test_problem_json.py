@@ -14,11 +14,30 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app as console_app
+
+# 面板读的是 filing-lens 的真实语料（22 份 10-K，164MB，.gitignore 掉的）。
+FILING_DATA = Path(__file__).resolve().parents[2] / "filing-lens" / "data"
+
+
+def _needs_filing() -> None:
+    """「正常回答」这条要真实 Apple 申报；干净检出里没有 data/ → 跳过（其余照跑）。
+
+    补齐：
+        cd filing-lens && python3 scripts/batch_bench.py
+    （只用本地已经抓下来的文件时加 `--no-fetch`）
+    """
+    if not (FILING_DATA / "0000320193_facts.json").exists() \
+            or not list(FILING_DATA.glob("0000320193_10k_*.htm")):
+        pytest.skip(
+            f"缺少 {FILING_DATA}/0000320193_10k_*.htm 与 0000320193_facts.json；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
 
 
 @pytest.fixture(scope="module")
@@ -58,6 +77,7 @@ def test_missing_local_10k_stays_a_normal_state(client):
 
 def test_happy_path_is_untouched(client):
     """正对照：正常回答仍是普通 JSON，不带 problem 成员。"""
+    _needs_filing()
     resp = client.get("/api/filing", params={"cik": "0000320193", "q": "营收多少"})
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/json")

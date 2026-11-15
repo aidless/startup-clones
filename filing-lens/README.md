@@ -88,7 +88,7 @@ python3 scripts/review_diff.py 0001730168 --inject \
 - **整元金额**：正文按整元记账（`$ 20,690,000`）时，只认 million/billion 的解析器整项空转、报「正文没有同量级表述」。
 - **基数跨零**：`447,643 → −53,171` 印「-111.9%」并拿去否定正文；现在写「基数跨零、百分比无含义、只能看绝对额」。
 
-样本与结论都落盘了：`../go-to-market/samples/prospects/`（三家真事务所客户，含 PDF 与 accession）。
+样本与结论都落盘了：`samples/prospects/`（三家真事务所客户，含 PDF 与 accession）。
 
 ### 六项检查在 22 份真实 10-K 上分别命中多少（2026-11-14 普查）
 
@@ -175,6 +175,54 @@ python -m filinglens.cli metric revenue --facts AAPL-facts.json
 # 抓真实文件（SEC 要求 User-Agent 带联系方式）
 export SEC_UA="your-name your@email"
 ```
+
+## 先跑测试要备好语料
+
+**`data/` 不在仓库里**。那 22 份 SEC 10-K（含 XBRL，共 164MB）被 `.gitignore` 掉，
+原因是体积与再分发条款——它们不是代码，任何人在本地都能重抓一遍：
+
+```bash
+cd filing-lens
+python3 scripts/batch_bench.py            # 缺哪份抓哪份（真去 SEC，约 3–5 分钟）
+python3 scripts/batch_bench.py --no-fetch # 只用 data/ 里已经有的
+```
+
+`data/` 到位后，仓库根部 `python3 -m pytest -q` 应当 **560 passed**（0 skip，0 failed）。
+
+### 干净检出（没有 `data/`）
+
+不是红的，是**明确 skip**：需要真实申报的用例逐条跳过，并在 skip reason 里打印上面
+那条抓取命令；一个模块里如果还有用合成数据的用例，那些照常跑（不是模块顶一刀切）。
+当前的实测形状是 **511 passed / 41 skipped / 0 failed**：
+
+| 模块 | skip 条数 | 缺的是哪份语料 |
+|---|---|---|
+| `filing-lens/tests/test_review_diff.py` | 11 | `data/` 里 Broadcom / Meta / Cisco / Meta-Platforms 四份申报 |
+| `cruxline/tests/test_review_r3.py` | 7 | `cruxline/data/traces.jsonl` |
+| `filing-lens/tests/test_review_r3.py` | 6 | `data/` 里 Intel / Qualcomm / Apple / Amazon 四份申报 |
+| `tests/test_json_output.py` | 4 | Apple 的 10-K + `cruxline/data/traces.jsonl` |
+| `tests/test_e2e.py` | 3 | `cruxline/data/traces.jsonl` |
+| `tests/test_corpus_matrix.py` | 3 | `data/`（整份语料矩阵的抽样两份） |
+| `console/tests/test_console.py` | 3 | Apple 的 10-K（filing 面板） |
+| `filing-lens/tests/test_percent_binding.py` | 1 | `data/` 里 Cisco |
+| `filing-lens/tests/test_review_p1_judgement.py` | 1 | `data/` 里 Apple |
+| `console/tests/test_problem_json.py` | 1 | Apple 的 10-K |
+| `cruxline/tests/test_cli_traces.py` | 1 | `cruxline/data/traces.jsonl` |
+
+### 另一份不在仓库里的语料：`cruxline/data/traces.jsonl`
+
+它是 60 条**真实 agent 会话轨迹**（从本机 `~/.dsh/sessions` 导出，含生产内容），
+既没有公网来源，也不该随仓库发布，所以这批用例在别人的机器上**只能 skip**：
+
+```bash
+cd cruxline && python3 scripts/export_dsh_traces.py   # 需要本机有 dsh 会话日志 + zstd
+```
+
+`tests/test_e2e.py` 的十阶段链路就卡在这份语料上（第 5 阶段 `crux.judge` 读它），
+所以整体 skip，而**不是**假装跑过半条链。链上另外两段 `filing.ask` / `filing.diff`
+已经不依赖 `data/`：`scripts/e2e.py:resolve_corpus()` 在 `data/` 缺失时退到**入库的**
+`data-prospects/`（XERIANT `0001481504`，三家小盘客户随仓库发布），所以 `data/` 一到位、
+`traces.jsonl` 一导出，链就是十段真跑。
 
 ## 真实数据上做了哪些事（Apple FY2026 10-K 实测）
 

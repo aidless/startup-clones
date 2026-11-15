@@ -29,8 +29,37 @@ EXPECTED_PROJECTS = {"geo-radar", "filing-lens", "cruxline", "audit-loop",
                      "agent-inbox", "agent-store"}
 
 
+FILING = ROOT / "filing-lens"
+PROSPECTS = FILING / "data-prospects"                 # 入库：三家小盘客户的 10-K
+TRACES = ROOT / "cruxline" / "data" / "traces.jsonl"  # 不入库：60 条真实 agent 轨迹
+
+
+def _missing_corpora() -> list[str]:
+    """这条链还缺什么语料。缺了就把「缺什么 + 怎么补」写进 skip reason。
+
+    分三层看：
+    - `filing.ask` / `filing.diff` 已经有 `scripts/e2e.py:resolve_corpus()` 兜底，
+      没有 `data/` 时退到**入库的** `data-prospects/`（XERIANT 0001481504），
+      所以这两段在干净检出里照样真跑；
+    - `crux.judge` 读 `cruxline/data/traces.jsonl`（60 条真实 agent 会话），
+      它来自本机 dsh 会话日志、**无法**随仓库发布，也没有公网来源；
+    - `data-prospects/` 是入库的，缺了说明检出不全（不是「没抓语料」）。
+    """
+    missing = []
+    if not PROSPECTS.is_dir():
+        missing.append(f"入库样本缺失：{PROSPECTS}（不应该发生，说明检出不全）")
+    if not TRACES.exists():
+        missing.append(
+            f"缺少 {TRACES}；这批轨迹是 60 条真实 agent 会话（`~/.dsh/sessions` 导出，"
+            "含生产内容，不随仓库发布）：`cd cruxline && python3 scripts/export_dsh_traces.py`")
+    return missing
+
+
 @pytest.fixture(scope="module")
 def chain():
+    missing = _missing_corpora()
+    if missing:
+        pytest.skip("十阶段链路跑不了，" + "；".join(missing))
     ok, results = run_chain(quiet=True)
     return ok, results
 

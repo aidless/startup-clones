@@ -4,7 +4,7 @@
 审查时间：2026-11-14
 审查对象：`startup-clones/audit-loop`（README 117 行）、`startup-clones/cruxline`（README 130 行）
 
-**取证前提（影响结论读法）**：`git rev-parse --show-toplevel` 在 `audit-loop/` 与 `cruxline/` 下都返回 `/home/liuzewen/F:\deepseek/startup-clones` —— 不是两个独立仓库，是同一仓库下的两个子目录（`startup-clones/.git`）。审查期间两个子目录本身没有任何未提交改动（`git status` 里的 9 项全是 `agent-store/`、`filing-lens/` 的他人改动）；我全程未做任何 git 写操作，自造的 `audit-loop/out/wp-review.xlsx`、`cruxline/cruxline.db` 已删除。两个项目的自带测试我都跑了，都是绿的（`audit-loop 50 passed`、`cruxline 61 passed`）—— 下面的 P0 全部发生在测试覆盖之外。
+**取证前提（影响结论读法）**：`git rev-parse --show-toplevel` 在 `audit-loop/` 与 `cruxline/` 下都返回 `<仓库根>/startup-clones` —— 不是两个独立仓库，是同一仓库下的两个子目录（`startup-clones/.git`）。审查期间两个子目录本身没有任何未提交改动（`git status` 里的 9 项全是 `agent-store/`、`filing-lens/` 的他人改动）；我全程未做任何 git 写操作，自造的 `audit-loop/out/wp-review.xlsx`、`cruxline/cruxline.db` 已删除。两个项目的自带测试我都跑了，都是绿的（`audit-loop 50 passed`、`cruxline 61 passed`）—— 下面的 P0 全部发生在测试覆盖之外。
 
 ---
 
@@ -61,7 +61,7 @@
 - 位置：`audit-loop/auditloop/analytics.py:232-244`（`_items` 里 `status="flag" if f else "ok"`，对每个可用年份一律先给 `ok`）；配合 `audit-analytics` 只在相邻两年才可能产 finding（`analytics.py:85-93`）
 - 复现：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/audit-loop
+  cd <仓库根>/startup-clones/audit-loop
   python3 -m auditloop.cli analytics --facts /tmp/r3probe/probe_single_year.json
   ```
   ```
@@ -88,7 +88,7 @@
 - 位置：`cruxline/cruxline/cli.py:93` `judge_map = _pass_map(Judge(threshold=args.threshold).score_all(traces))` —— `Judge()` 走 `DEFAULT_RUBRIC`；而 `judge` 子命令默认 `--rubric agent`（`cruxline/cruxline/cli.py:144`）。`calibrate` 子命令没有 `--rubric` 参数（`grep -n "\-\-rubric" cruxline/cruxline/cli.py` 只在 judge 里命中）。
 - 复现（把 60 条人工标注设成「与 agent judge 完全一致」，这是校准门存在的唯一目的——检验判断一致，而不是检验 rubric 偏好）：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/cruxline
+  cd <仓库根>/startup-clones/cruxline
   python3 -m cruxline.cli calibrate --traces data/traces.jsonl --labels /tmp/r3probe/expert_agree_with_agent.json --min-kappa 0.6
   ```
   ```
@@ -104,7 +104,7 @@
 - 位置：`cruxline/cruxline/rubrics.py:213,215`（`read_before_write 0.10`、`verify_after_write 0.10`，均非 fatal）vs `cruxline/README.md:97-103`
 - 复现：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/cruxline
+  cd <仓库根>/startup-clones/cruxline
   python3 scripts/real_traces.py | grep t141
   ```
   ```
@@ -119,7 +119,7 @@
 - 位置：`audit-loop/auditloop/cli.py:125-127`（`ns = argparse.Namespace(entity="Acme Industrial", out="out/workpaper.xlsx")` 缺 `json`）→ `cli.py:101`（`if args.json:`）
 - 复现：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/audit-loop
+  cd <仓库根>/startup-clones/audit-loop
   python3 -m auditloop.cli demo; echo "EXIT=$?"
   ```
   ```
@@ -148,7 +148,7 @@
 - 位置：`audit-loop/auditloop/cli.py:158-166`（docstring 自述「0=跑完无异常、1=跑完有异常、2=根本没跑成」）+ `cmd_analytics` 末尾 `return 0` 的路径
 - 复现：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/audit-loop
+  cd <仓库根>/startup-clones/audit-loop
   python3 -m auditloop.cli analytics --facts tests/fixtures/revenue_only.json; echo "EXIT=$?"
   ```
   ```
@@ -206,7 +206,7 @@
 - 位置：`cruxline/README.md:75`（与同文件 37-39 行的 `agent 59/60` 自相矛盾）
 - 复现：
   ```bash
-  cd '/home/liuzewen/F:\deepseek' && cd startup-clones/cruxline
+  cd <仓库根>/startup-clones/cruxline
   python3 scripts/real_traces.py | head -2
   ```
   ```

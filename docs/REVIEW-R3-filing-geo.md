@@ -4,7 +4,7 @@
 所有命令的工作目录前缀（路径含字面反斜杠，必须两段式）：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens   # 或 startup-clones/geo-radar
+cd <仓库根>/startup-clones/filing-lens   # 或 startup-clones/geo-radar
 ```
 
 本次覆盖 commit：`startup-clones` 仓库 HEAD = `793106b`（2026-11-14）。geo-radar 目录内无独立 `.git`，与 filing-lens 同属这一个仓库。
@@ -78,7 +78,7 @@ cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens   # 或 startup
 - 复现：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens
+cd <仓库根>/startup-clones/filing-lens
 python3 -c "
 from filinglens import corpus
 for tag in ['0000050863','0000804328']:
@@ -140,7 +140,7 @@ print(bool(R.search('57,000 full-time employees')))"
 - 复现：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens
+cd <仓库根>/startup-clones/filing-lens
 python3 -m filinglens.cli metric revenue --facts data/0000789019_facts.json
 # FY2018  30.09B USD  [RevenueFromContractWithCustomerExcludingAssessedTax]
 # FY2019  33.72B USD  [RevenueFromContractWithCustomerExcludingAssessedTax]
@@ -176,7 +176,7 @@ fy=2019 end 2019-06-29 val  64,040,000,000   <- annual_series 选中（end 最�
 - 复现：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens
+cd <仓库根>/startup-clones/filing-lens
 python3 -c "
 from filinglens import corpus
 for tag,q in [('0001018724','研发费用是多少？'),('0001018724','r&d expense'),('0000104169','研发费用是多少？')]:
@@ -215,7 +215,7 @@ grep -n "声量" /tmp/r3/det1.md
 合成三例直接暴露：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/geo-radar
+cd <仓库根>/startup-clones/geo-radar
 PYTHONPATH=. python3 -c "
 from georadar import metrics, report
 def show(om,op,opos,rm,rp,rpos):
@@ -238,7 +238,7 @@ show(10,10,1.0,10,6,3.0); show(12,10,1.2,10,10,2.0)"
 - 复现：
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/geo-radar
+cd <仓库根>/startup-clones/geo-radar
 PYTHONPATH=. python3 -m georadar.cli demo; echo "exit=$?"
 # AttributeError: 'Namespace' object has no attribute 'json'
 # exit=1
@@ -250,7 +250,7 @@ PYTHONPATH=. python3 -m georadar.cli demo; echo "exit=$?"
 mkdir -p /tmp/r3/demotest && cd /tmp/r3/demotest && rm -f georadar.db
 python3 -c "
 import sys, os
-sys.path.insert(0, os.path.join('/home/liuzewen/F:\\deepseek','startup-clones','geo-radar'))
+sys.path.insert(0, os.path.join('<HOME>/F:\\deepseek','startup-clones','geo-radar'))
 from georadar import cli
 try: print('rc', cli.main(['demo']))
 except Exception as e: print(type(e).__name__, e)
@@ -421,7 +421,7 @@ sed -n '164,165p' georadar/providers.py
 ## 复核用命令速查
 
 ```bash
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/filing-lens
+cd <仓库根>/startup-clones/filing-lens
 python3 -m filinglens.cli demo                                    # P0-3 前置、P1-2、P2-1
 python3 -m filinglens.cli metric revenue --facts data/0000320193_facts.json   # P0-2
 python3 -m filinglens.cli ask --html data/0000050863_10k_2025-12-27.htm "有多少员工？"  # P0-1
@@ -429,7 +429,7 @@ python3 -m filinglens.cli ask --html data/0001018724_10k_2025-12-31.htm "研发�
 python3 scripts/batch_bench.py --no-fetch                         # P1-4
 python3 scripts/real_regression.py
 
-cd '/home/liuzewen/F:\deepseek' && cd startup-clones/geo-radar
+cd <仓库根>/startup-clones/geo-radar
 PYTHONPATH=. python3 -m georadar.cli demo                         # P1-1
 PYTHONPATH=. python3 -m georadar.cli run --brand Acme --category "AI SRE" \
   --competitors "Traversal,Rootly,Zeta" --provider mock --repeat 3 --limit 12 \

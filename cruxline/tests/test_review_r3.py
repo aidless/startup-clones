@@ -27,6 +27,17 @@ from cruxline.trace import Trace  # noqa: E402
 
 THRESHOLD = 0.75
 
+_HOW_TO_EXPORT = (
+    "这批轨迹是 60 条真实 agent 会话（`~/.dsh/sessions` 导出，含生产内容，"
+    "不随仓库发布）：`cd cruxline && python3 scripts/export_dsh_traces.py`；"
+    "它只影响本文件里那些「拿真实语料现算」的用例，下面的纯逻辑用例照常跑")
+
+
+def _needs_traces() -> None:
+    """`data/traces.jsonl` 被 .gitignore 掉，且**没有**公网来源可补。"""
+    if not DATA.exists():
+        pytest.skip(f"缺少 {DATA}；{_HOW_TO_EXPORT}")
+
 
 def run_cli(*args: str) -> subprocess.CompletedProcess:
     """真起子进程跑 CLI（不用 PYTHONPATH：工作区根名里的冒号会被当成路径分隔符）。"""
@@ -56,6 +67,7 @@ def _labels_file(tmp_path: Path) -> Path:
 def test_calibrate_defaults_to_agent_rubric(tmp_path):
     """`judge` 默认 agent，`calibrate` 却写死 `Judge(threshold=...)`=DEFAULT_RUBRIC。
     校准的是另一把尺，于是「rubric 差异」被误诊成「judge 偏松/偏严」。"""
+    _needs_traces()
     labels = _labels_file(tmp_path)
     proc = run_cli("calibrate", "--traces", str(DATA), "--labels", str(labels))
     out = proc.stdout
@@ -69,6 +81,7 @@ def test_calibrate_defaults_to_agent_rubric(tmp_path):
 
 def test_calibrate_can_select_default_rubric(tmp_path):
     """显式 `--rubric default` 必须换尺（并且说清楚换成了哪把）。"""
+    _needs_traces()
     labels = _labels_file(tmp_path)
     proc = run_cli("calibrate", "--traces", str(DATA), "--labels", str(labels),
                    "--rubric", "default")
@@ -80,6 +93,7 @@ def test_calibrate_can_select_default_rubric(tmp_path):
 
 
 def test_calibrate_rejects_unknown_rubric(tmp_path):
+    _needs_traces()
     labels = _labels_file(tmp_path)
     proc = run_cli("calibrate", "--traces", str(DATA), "--labels", str(labels),
                    "--rubric", "nope")
@@ -122,6 +136,7 @@ def test_trace_from_dict_reconciles_aborted_and_reason():
 
 def test_error_trace_in_real_corpus_is_not_scored_as_completed():
     """真实语料里确实有 reason=error 的轨迹：修完之后它必须拿 0 分。"""
+    _needs_traces()
     traces = _read_traces(str(DATA))
     errored = [t for t in traces if t.meta.get("reason") == "error"]
     assert errored, "语料里应当有 reason=error 的轨迹"
@@ -163,6 +178,7 @@ def test_readme_does_not_claim_a_single_fatal_item():
 # ---------------- P0-3 / P1-6：README 的真实轨迹数字 ----------------
 
 def test_readme_headline_matches_recomputed_counts():
+    _needs_traces()
     vs = _verdicts()
     passed = sum(v.passed for v in vs)
     assert (len(vs), passed) == (60, 59), "语料或判据变过，先确认基线再改 README"
@@ -172,6 +188,7 @@ def test_readme_headline_matches_recomputed_counts():
 def test_readme_t141_line_matches_real_verdict():
     """README 拿 `#t141` 当「规则真能抓缺陷」的唯一样本，实测它是 0.800 PASS。
     文档不许为了自圆其说去改 rubric 阈值 —— 只许把真相写对。"""
+    _needs_traces()
     vs = _verdicts()
     v = next(v for v in vs if v.case_id.endswith("#t141"))
     line = next(ln for ln in README.splitlines() if "#t141" in ln)
@@ -181,6 +198,7 @@ def test_readme_t141_line_matches_real_verdict():
 
 def test_readme_fail_case_is_a_real_fail():
     """改成「真命中」时，被举的那条必须真的 FAIL（举一条 PASS 当反例 = 自相矛盾）。"""
+    _needs_traces()
     failed = [v for v in _verdicts() if not v.passed]
     assert failed, "语料里应有 FAIL 样本"
     for v in failed:

@@ -21,6 +21,28 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 FILING = ROOT / "filing-lens"
 CIK = "0000320193"
+TRACES = ROOT / "cruxline" / "data" / "traces.jsonl"
+
+_HOW_TO_FETCH_FILINGS = (
+    "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+    "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
+_HOW_TO_EXPORT_TRACES = (
+    "这批轨迹是 60 条真实 agent 会话（从本机 `~/.dsh/sessions` 导出，含生产内容，"
+    "不随仓库发布）：`cd cruxline && python3 scripts/export_dsh_traces.py`")
+
+
+def _needs_filing() -> Path:
+    """`filing-lens/data/` 是被 .gitignore 掉的 164MB 语料，干净检出里没有它。"""
+    if not (FILING / "data" / f"{CIK}_10k_2026-09-26.htm").exists():
+        pytest.skip(f"缺少 {FILING / 'data'} 下 Apple FY2026 的 10-K；{_HOW_TO_FETCH_FILINGS}")
+    return FILING / "data"
+
+
+def _needs_traces() -> Path:
+    """`cruxline/data/traces.jsonl` 同样被 .gitignore 掉，且**无法**从公网补回来。"""
+    if not TRACES.exists():
+        pytest.skip(f"缺少 {TRACES}；{_HOW_TO_EXPORT_TRACES}")
+    return TRACES
 
 
 def _run(project: str, *args: str) -> dict:
@@ -34,6 +56,7 @@ def _run(project: str, *args: str) -> dict:
 
 
 def test_filing_ask_json_keeps_answer_and_citations():
+    _needs_filing()
     data = _run("filing-lens", "filinglens.cli", "ask", "What was net income?",
                 "--html", str(FILING / "data" / f"{CIK}_10k_2026-09-26.htm"),
                 "--facts", str(FILING / "data" / f"{CIK}_facts.json"), "--json")
@@ -61,6 +84,7 @@ def test_geo_report_json_matches_the_markdown_numbers(tmp_path):
 
 
 def test_crux_judge_json_carries_verdicts_and_pass_rate():
+    _needs_traces()
     data = _run("cruxline", "cruxline.cli", "judge", "--traces", "data/traces.jsonl",
                 "--db", ":memory:", "--json")
     assert data["total"] >= 60
@@ -90,6 +114,7 @@ def test_judge_cli_uses_the_agent_rubric_by_default():
     而 README 与 `scripts/real_traces.py` 说 59/60 —— 同一批轨迹两个数，
     差别只在「用了哪套 rubric」，命令行从来没走过产品自己那套。
     """
+    _needs_traces()
     data = _run("cruxline", "cruxline.cli", "judge", "--traces", "data/traces.jsonl",
                 "--db", ":memory:", "--json")
     assert data["rubric"] == "agent", data.get("rubric")
@@ -99,6 +124,7 @@ def test_judge_cli_uses_the_agent_rubric_by_default():
 
 def test_judge_cli_can_ask_for_the_generic_rubric():
     """正对照：显式要通用 rubric 时必须真的换过去（否则上面那条就等于写死）。"""
+    _needs_traces()
     data = _run("cruxline", "cruxline.cli", "judge", "--traces", "data/traces.jsonl",
                 "--db", ":memory:", "--rubric", "default", "--json")
     assert data["rubric"] == "default"

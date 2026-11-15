@@ -20,10 +20,30 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 APPLE = "0000320193"
 INTEL = "0000050863"
 FULL_MATRIX = ROOT / "docs" / "corpus-matrix.json"
+DATA = ROOT / "filing-lens" / "data"
+
+
+def _needs_data() -> None:
+    """下面三条要真解析语料；`data/` 是被 .gitignore 掉的 164MB，干净检出里没有。
+
+    基线自洽那条（`test_full_matrix_baseline_is_present_and_self_consistent`）
+    只读入库的 `docs/corpus-matrix.json`，不在这里跳过——它守在干净检出里也有效。
+
+    补齐：
+        cd filing-lens && python3 scripts/batch_bench.py
+    （只用本地已经抓下来的文件时加 `--no-fetch`）
+    """
+    if not list(DATA.glob("*_10k_*.htm")):
+        pytest.skip(
+            f"缺少 {DATA}/*_10k_*.htm；"
+            "先跑 `cd filing-lens && python3 scripts/batch_bench.py` 抓回 22 份 10-K"
+            "（只用本地已有文件：python3 scripts/batch_bench.py --no-fetch）")
 
 
 def _matrix(*args: str) -> dict:
@@ -34,6 +54,7 @@ def _matrix(*args: str) -> dict:
 
 
 def test_two_representative_files_parse():
+    _needs_data()
     data = _matrix("--only", f"{APPLE},{INTEL}")
     rows = {r["cik"]: r for r in data["rows"]}
     assert set(rows) == {APPLE, INTEL}
@@ -44,12 +65,14 @@ def test_two_representative_files_parse():
 
 
 def test_apple_keeps_item_structure():
+    _needs_data()
     rows = {r["cik"]: r for r in _matrix("--only", APPLE)["rows"]}
     assert rows[APPLE]["sections"] >= 15, "Apple 的 Item 结构识别退化"
 
 
 def test_intel_is_the_recorded_full_text_fallback():
     """Intel 退化成 Full Text 是**已知边界**；这条同时钉住「不许再多一份」。"""
+    _needs_data()
     rows = {r["cik"]: r for r in _matrix("--only", INTEL)["rows"]}
     assert rows[INTEL]["sections"] == 1, "Intel 的退化形态变了，先说明原因再改这条断言"
     assert rows[INTEL]["chunks"] >= 500, "整篇当一段时也不该只剩几百字"

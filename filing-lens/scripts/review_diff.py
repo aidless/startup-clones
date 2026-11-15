@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """生成「10-K 复核差异表」——卖给事务所的那一页纸。
 
-六项固定检查（见 go-to-market/03-FREE-AUDIT.md），每项要么给出可追的 ref，
+六项固定检查（口径见 samples/prospects/README.md），每项要么给出可追的 ref，
 要么明确写「无法核」。绝不猜：宁可少一条，不可多一条假警报。
 
 用法：
