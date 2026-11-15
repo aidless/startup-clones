@@ -10,7 +10,7 @@
 pip install -e .            # 只依赖 openpyxl
 ```
 
-## Excel 工作流（十分钟跑出第一份结果）
+## 快速开始：Excel 工作流（十分钟跑出第一份结果）
 
 审计师手上是 Excel，不是 JSON。整条链路只用到三条命令：
 

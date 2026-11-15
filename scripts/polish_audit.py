@@ -19,6 +19,7 @@ README 里有没有能让陌生人跑起来的命令、边界有没有写、CLI 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import subprocess
@@ -113,20 +114,45 @@ def check_cli(d: Path) -> tuple[bool, str]:
     return True, f"{len(cp.stdout.splitlines())} 行帮助"
 
 
+def _print_lines(src: str) -> list[int] | None:
+    """按 AST 数 `print(...)` 调用，而不是按行正则。
+
+    行正则会把**字符串里的模板正文**也算成调试输出：`agentstore/quickstart.py`
+    内嵌的 `RUN_PY` 是生成给用户跑的脚本，里面 8 个 `print` 属于产物、不属于本模块。
+    反过来它也会漏掉 `print(` 前面有缩进修饰、跨行的写法。AST 两个方向都判得对。
+
+    解析失败返回 None（调用方判红）——语法坏掉的文件不许静默放行。
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+    return sorted({n.lineno for n in ast.walk(tree)
+                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                   and n.func.id == "print"})
+
+
 def check_hygiene(d: Path) -> tuple[bool, str]:
     """库里不许留调试痕迹。这些不影响功能，但会让读代码的人不敢信这个仓库。"""
     srcs = [p for p in d.rglob("*.py")
             if ".git" not in p.parts and "tests" not in p.parts and "scripts" not in p.parts]
-    todos, bare, prints = [], [], []
+    todos, bare, prints, broken = [], [], [], []
     for p in srcs:
-        for i, line in enumerate(read(p).splitlines(), 1):
+        text = read(p)
+        for i, line in enumerate(text.splitlines(), 1):
             if re.search(r"\b(TODO|FIXME|XXX)\b", line):
                 todos.append(f"{p.relative_to(d)}:{i}")
             if re.search(r"except\s*(Exception)?\s*:\s*(#.*)?$", line):
                 bare.append(f"{p.relative_to(d)}:{i}")
-            if re.search(r"^\s*print\(", line) and "cli" not in p.name:
-                prints.append(f"{p.relative_to(d)}:{i}")
+        if "cli" not in p.name:
+            found = _print_lines(text)
+            if found is None:
+                broken.append(str(p.relative_to(d)))
+            else:
+                prints.extend(f"{p.relative_to(d)}:{i}" for i in found)
     bad = []
+    if broken:
+        bad.append(f"语法错误×{len(broken)}（{broken[0]}）")
     if todos:
         bad.append(f"TODO×{len(todos)}（{todos[0]}）")
     if bare:
