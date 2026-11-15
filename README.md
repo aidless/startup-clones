@@ -12,6 +12,19 @@ make e2e       # 端到端串联：十个阶段跨六个项目真跑一次（约
 make matrix    # 全语料解析矩阵：22 份 10-K 逐份解析并与基线比对（约 2 分钟）
 ```
 
+## 已经单独开源的三个（从这里开始读更快）
+
+其中三个是可以脱离本仓库独立使用的工具，各有自己的仓库、CI 与 `pip install` 路径：
+
+| 包 | 仓库 | 一句话 | 装完之后第一条命令 |
+| --- | --- | --- | --- |
+| `cruxline` | <https://github.com/aidless/cruxline> | 把「这算做好了」写成可执行 rubric，逐条判 agent 轨迹，并证明这把尺本身可信 | `cruxline judge --traces examples/traces-openai.jsonl` |
+| `agentstore` | <https://github.com/aidless/agentstore> | agent 应用商店的最小内核：清单、不可变版本、权限闸、幂等计费与分成 | `agentstore quickstart && cd agentstore-quickstart && python3 run.py` |
+| `auditloop` | <https://github.com/aidless/auditloop> | 审计底稿自动化内核：银行调节、账龄、收入截止，Excel 进 Excel 出 | `auditloop init && auditloop analytics --facts facts.xlsx` |
+
+另外四个（`filing-lens` / `geo-radar` / `agent-inbox` / `console`）留在这个仓库里：它们是这一批
+「某个具体产品为什么能卖钱」的完整实现，价值在于和真实语料一起可跑，不属于可复用组件。
+
 ## 六个项目
 
 | 目录 | 对标（融资事实） | 一句话内核 | 测试 |
