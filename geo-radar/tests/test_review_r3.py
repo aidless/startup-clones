@@ -143,12 +143,25 @@ def test_demo_leaves_no_partial_run_behind(tmp_path, monkeypatch):
 
 # -------------------------------------------------- P2-2 provider 说法与实现对调
 
-def test_cli_choices_include_every_documented_provider(capsys):
-    with pytest.raises(SystemExit):
+def test_cli_choices_include_every_documented_provider():
+    """判据是「parser 里注册了哪些 choices」，不是「argparse 报错文案里有没有引号」。
+
+    原来断言 `"'ollama'" in err`：argparse 在不同 Python 补丁版本里对 choices 的
+    渲染不一样（3.12.3 带引号、3.12.16 不带），这条测试会在 CI 上按版本翻脸。
+    """
+    parser = cli.build_parser()
+    run = dict(parser._subparsers._group_actions[0].choices)["run"]
+    provider = next(a for a in run._actions if a.dest == "provider")
+    assert provider.choices == ["mock", "ollama", "openai", "openai-compat",
+                               "deepseek", "kimi", "vllm", "magpie"]
+    assert "magpie" in provider.choices, "README 教用户写 --provider magpie，choices 里却没有它"
+
+
+def test_invalid_provider_exits_2_regardless_of_message_wording(capsys):
+    with pytest.raises(SystemExit) as exc:
         cli.main(["run", "--brand", "A", "--category", "C", "--provider", "bogus"])
-    err = capsys.readouterr().err
-    assert "'ollama'" in err, err
-    assert "'magpie'" in err, "README 教用户写 --provider=magpie，choices 里却没有它"
+    assert exc.value.code == 2
+    assert "bogus" in capsys.readouterr().err
 
 
 def test_readme_provider_table_matches_choices():

@@ -92,7 +92,7 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-14）
 
-- 测试：**565 passed**（geo 53 / filing 156 / audit 71 / crux 80 / inbox 75 / store 59 / console 16 / 根目录契约测试 47；另 `go-to-market/` 是内部商业包，其 8 个测试只在源仓库跑，不随公开仓库发布）
+- 测试：**565 passed**（geo 54 / filing 156 / audit 71 / crux 80 / inbox 75 / store 59 / console 16 / 根目录契约测试 47；另 `go-to-market/` 是内部商业包，其 8 个测试只在源仓库跑，不随公开仓库发布）
   根目录 `python3 -m pytest` 一条命令跑完；`make test` 仍是逐项目跑（七个子项目）。
 - 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
   已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——

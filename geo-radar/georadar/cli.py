@@ -140,7 +140,12 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return rc
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """把 parser 单独暴露出来：测试要断言「注册了哪些 choices」，
+
+    而不是去解析 argparse 的报错文案——那段文案在不同 Python 补丁版本里不一样
+    （同一个 3.12，choices 一处带引号一处不带），按文案断言会随 CI 翻脸。
+    """
     ap = argparse.ArgumentParser(prog="georadar", description="AI 搜索引擎可见性监测")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {__version__}")
@@ -170,7 +175,11 @@ def main(argv: list[str] | None = None) -> int:
 
     d = sub.add_parser("demo", help="零配置演示")
     d.set_defaults(func=cmd_demo)
+    return ap
 
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_parser()
     args = ap.parse_args(argv)
     return args.func(args)
 
