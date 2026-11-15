@@ -49,10 +49,29 @@ def resolve_corpus(root: Path = ROOT) -> tuple[Path, str, str]:
         "  也可以只抓一份：python3 -m filinglens.cli fetch 0000320193 --data data")
 
 
+def resolve_traces(root: Path = ROOT) -> tuple[Path, str]:
+    """cruxline 的轨迹语料：真导出优先，其次入库的合成样本。
+
+    60 条真实轨迹是本机 dsh 会话导出的，含生产内容，不随仓库发布；
+    干净检出里退到 `sample-traces.jsonl`（5 条合成轨迹，判据一致）。
+    """
+    data = root / "cruxline" / "data"
+    real = data / "traces.jsonl"
+    if real.exists():
+        return real, "真实导出（60 条本机会话）"
+    sample = data / "sample-traces.jsonl"
+    if sample.exists():
+        return sample, "合成样本（5 条，随仓库发布）"
+    raise SystemExit(
+        f"e2e 找不到轨迹语料：{real} 与 {sample} 都不存在。\n"
+        "  真轨迹：cd cruxline && python3 scripts/export_dsh_traces.py\n"
+        "  合成样本应随仓库发布，缺失说明检出不全")
+
+
 def _fmt(values: list[str], tmp: Path, data_dir: Path, cik: str,
-         html: Path, facts: Path) -> list[str]:
+         html: Path, facts: Path, traces: Path | None = None) -> list[str]:
     return [str(v).format(tmp=tmp, root=ROOT, cik=cik, data=data_dir,
-                          html=html, facts=facts) for v in values]
+                          html=html, facts=facts, traces=traces) for v in values]
 
 
 @dataclass
@@ -80,7 +99,8 @@ def _run(step: Step, tmp: Path, ctx: dict | None = None,
          extra: dict[str, str] | None = None) -> Result:
     cwd = ROOT / step.project
     ctx = ctx or {}
-    argv = _fmt(step.argv, tmp, ctx["data"], ctx["cik"], ctx["html"], ctx["facts"])
+    argv = _fmt(step.argv, tmp, ctx["data"], ctx["cik"], ctx["html"],
+                ctx["facts"], ctx.get("traces"))
     env = dict(os.environ, PYTHONIOENCODING="utf-8", **(extra or {}))
     p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
                        timeout=step.timeout, env=env)
@@ -91,7 +111,9 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
     """真跑一遍全链。返回 (是否全绿, 每步结果)。"""
     evidence: list[Result] = []
     data_dir, cik, period = resolve_corpus()
+    traces, _label = resolve_traces()
     ctx = {
+        "traces": traces,
         "data": data_dir,
         "cik": cik,
         "html": data_dir / f"{cik}_10k_{period}.htm",
@@ -149,7 +171,7 @@ def run_chain(quiet: bool = False) -> tuple[bool, list[Result]]:
         results.append(_run(Step(
             "crux.judge", "cruxline",
             [sys.executable, "-m", "cruxline.cli", "judge",
-             "--traces", "data/traces.jsonl", "--db", "{tmp}/crux.db"],
+             "--traces", "{traces}", "--db", "{tmp}/crux.db"],
             expect=["PASS"],
         ), tmp, ctx))
 

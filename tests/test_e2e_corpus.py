@@ -74,3 +74,32 @@ def test_the_step_argv_can_carry_the_chosen_data_dir(tmp_path):
     args = mod._fmt(["--data", "{data}", "--cik", "{cik}"], tmp_path, data_dir,
                     cik, html, facts)
     assert args == ["--data", str(data_dir), "--cik", "0001481504"]
+
+
+def test_traces_fall_back_to_the_tracked_sample(tmp_path):
+    """60 条真实轨迹来自本机会话日志，含生产内容，不能随仓库发布。
+
+    判据：有真轨迹用它；没有就退到入库的 5 条合成轨迹（`sample-traces.jsonl`）。
+    没有这条 fallback，干净检出里 crux.judge 阶段必红，e2e 只能报 9/10。
+    """
+    _make(tmp_path, "cruxline/data/sample-traces.jsonl")
+    mod = _e2e()
+    traces, label = mod.resolve_traces(tmp_path)
+    assert traces == tmp_path / "cruxline" / "data" / "sample-traces.jsonl"
+    assert "合成" in label
+
+
+def test_traces_prefer_the_real_export(tmp_path):
+    _make(tmp_path, "cruxline/data/traces.jsonl")
+    _make(tmp_path, "cruxline/data/sample-traces.jsonl")
+    mod = _e2e()
+    traces, label = mod.resolve_traces(tmp_path)
+    assert traces == tmp_path / "cruxline" / "data" / "traces.jsonl"
+    assert "真实" in label
+
+
+def test_traces_refuse_silently_running_nothing(tmp_path):
+    mod = _e2e()
+    with pytest.raises(SystemExit) as exc:
+        mod.resolve_traces(tmp_path)
+    assert "export_dsh_traces" in str(exc.value)

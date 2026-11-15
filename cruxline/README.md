@@ -33,6 +33,16 @@ python -m cruxline.cli demo        # 8 条轨迹 + 专家标注 + 校准 + 回�
 ```bash
 # 1) 从生产打点导出轨迹
 python -m cruxline.cli judge --traces data/traces.jsonl --threshold 0.75 --json
+
+> `data/traces.jsonl`（60 条真实轨迹）**不在仓库里**：它是本机会话日志导出的，
+> 含生产内容，没有公网来源。仓库随附的是 `data/sample-traces.jsonl`（5 条合成轨迹，
+> 覆盖 4 条通过 + 1 条「磁盘满却宣称已推」的否决样本），判据完全一样：
+>
+> ```bash
+> python -m cruxline.cli judge --traces data/sample-traces.jsonl    # 通过率 80%
+> ```
+>
+> 自己攒轨迹：`python scripts/export_dsh_traces.py --limit 60 --min-steps 4`。
 # 默认 --rubric agent（回合没走完、报错后编造结论这两项一票否决）；
 # 换 --rubric default 是 judge.py 里的通用五条——同一批 60 条：agent 59/60、default 34/60。
 # --rubric 默认 agent（产品自身那套，两个 fatal 项）；--rubric default 是 judge.py 的通用五条

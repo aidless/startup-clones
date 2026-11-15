@@ -12,3 +12,7 @@ reports/
 
 # 下载的原始语料（SEC 10-K/往来函件等，可重跑 scripts/ 拉回）
 data/
+# 例外：cruxline 的合成样本要入库（真轨迹 traces.jsonl 含生产内容，继续忽略）
+!cruxline/data/
+cruxline/data/*
+!cruxline/data/sample-traces.jsonl
