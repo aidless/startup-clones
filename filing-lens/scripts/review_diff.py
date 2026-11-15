@@ -286,11 +286,86 @@ def check_segments(f: corpus.Filing, rep: Report) -> None:
 # 第一版把方向词写成可选，结果 "accounted for approximately 60% of total net sales"、
 # "fines up to 10%" 全被当成同比差异报了出来（Apple 实测两条假阳）——
 # 复核员看到一条假警报就不会再打开第二页，这条正则宁可漏也不能错。
+# 三种写法都要认：动词式「increased 12%」、名词式「an increase of 12%」、口语式「up 12%」。
+# 只认动词式时，「Total revenue was $63.3 billion, an increase of 12%」这类最常见的
+# MD&A 写法一个都不命中——检查照跑、结论「未用百分比表述」，等于把主力句式静默丢掉。
 _PCT = re.compile(
-    r"\b(increased|decreased|grew|declined|rose|fell)\b[^.%]{0,30}?(\d{1,3}(?:\.\d+)?)\s*%", re.I)
+    r"\b(?:increased|decreased|grew|declined|rose|fell)\b[^.%]{0,30}?(\d{1,3}(?:\.\d+)?)\s*%"
+    r"|\b(?:an?\s+)?(?:increase|decrease|growth|decline|reduction)\s+of\s+(\d{1,3}(?:\.\d+)?)\s*%"
+    r"|\b(?:up|down)\s+(\d{1,3}(?:\.\d+)?)\s*%", re.I)
+# 合计口径的主语。原件写「Total net sales」「Net sales」「Total revenue」「revenues」都算，
+# 但「Services net sales」「Product net sales」这类带分部修饰的不算 —— 只看这几组词会
+# 把 Tesla 的「Services net sales decreased $770 million, or 28%」判成合计同比（实测假阳）。
+# 只认**自带合计含义**的主语：total/net sales、total/net revenue、consolidated ...
+# 光写 "revenue" 不行 —— 「RL revenue in 2025 increased $61 million, or 3%」里的 RL 是
+# Reality Labs 分部，句子结构与合计口径一模一样（实测假阳）。宁可漏掉不带限定词的
+# 写法，也不给合伙人递一条假警报。
 _TOTAL_SUBJECT = re.compile(
-    r"\btotal\s+(?:net\s+)?(?:sales|revenues?|net\s+revenue)\b", re.I)
+    r"\b(?:total|consolidated|company-?wide|net)\s+(?:net\s+)?(?:sales|revenues?)\b", re.I)
+# 主语前面紧邻这些词 → 说明是分部/产品/地区口径，不是合计。
+_CATEGORY_PREFIX = re.compile(
+    r"\b(?:services?|products?|advertising|segment|geograph\w*|Americas|EMEA|APJC"
+    r"|region\w*|division\w*|subscription\w*|hardware|software|cloud|other|devices?"
+    r"|mobility|platforms?|solutions?)\s*$", re.I)
 _PCT_EXCLUDE = re.compile(r"%\s*of\b|\bof (?:total|net sales|revenue)\b", re.I)
+
+
+# 季度/环比的句子不进年度同比比对：Cisco「For the fourth quarter ... total revenue
+# increased by 18%」与 Meta「increased 17%, 19%, 17% between the third and fourth
+# quarters」都是期间口径不同，拿来比全年同比是绑错对象（2026-11-14 语料普查实测）。
+_QUARTER_RE = re.compile(
+    r"\b(?:first|second|third|fourth)\s+(?:fiscal\s+)?quarters?\b"
+    r"|\bquarterly\b|\bQ[1-4]\b|\bsequential\w*|\bquarter-over-quarter\b", re.I)
+# 主语与百分比之间若出现这些词，说明百分比说的是别的东西（分部/产品/地区）。
+_OTHER_SUBJECT = re.compile(
+    r"\b(?:product|service|services|segment|geograph\w*|Americas|EMEA|APJC|region\w*"
+    r"|division\w*|subscri\w+|advertising|revenue|revenues|sales)\b", re.I)
+
+
+def _pct_value(m: re.Match) -> float:
+    """三种写法各占一组，取第一个非空组。"""
+    for g in m.groups():
+        if g:
+            return float(g)
+    return 0.0
+
+
+# 允许出现在合计主语前面的限定词（大写开头但不算分部名）。
+_DETERMINERS = {"total", "consolidated", "net", "our", "the", "in", "for", "during",
+                "company", "its", "and", "while", "fiscal", "as"}
+
+
+def _segment_prefix(before: str) -> bool:
+    """主语前面紧邻的词里有大写词 → 说明是分部/产品名在修饰这个主语。"""
+    words = re.findall(r"[A-Za-z][A-Za-z&.\-]*", before)[-3:]
+    for w in words:
+        if w[:1].isupper() and w.lower() not in _DETERMINERS:
+            return True
+    return False
+
+
+def _pct_bound_to_total(sent: str, pct_start: int) -> bool:
+    """百分比是否**紧接**在合计主语后面（中间只有动词/数字/标点）。
+
+    只判「句子里有没有 total revenue」不够：Cisco 那句
+    「Within total revenue, product revenue increased by 16%」里 total 与 16% 都在，
+    但百分比属于 product revenue。判据是主谓之间不许插进另一个主语。
+    """
+    for m in _TOTAL_SUBJECT.finditer(sent):
+        if m.end() > pct_start:
+            continue
+        gap = sent[m.end():pct_start]
+        if len(gap) > 80:
+            continue
+        if _OTHER_SUBJECT.search(gap):
+            continue
+        # 主语前是否被分部词修饰：「Services net sales」「Data Center net revenue」
+        # 「RL revenue」。分部名多为多个大写词，列表永远列不全，所以判据是
+        # 「紧邻的大写词不是限定词」而不是「命中某个已知分部名」。
+        if _segment_prefix(sent[:m.start()]):
+            continue
+        return True
+    return False
 
 
 def check_text_percent(f: corpus.Filing, rep: Report) -> None:
@@ -326,8 +401,12 @@ def check_text_percent(f: corpus.Filing, rep: Report) -> None:
             # 是分部口径，拿它比总营收同比会产生 12 条假阳（实测）。
             if not _TOTAL_SUBJECT.search(sent):
                 continue
+            if _QUARTER_RE.search(sent):
+                continue
             for m in _PCT.finditer(sent):
-                claimed = float(m.group(2))
+                if not _pct_bound_to_total(sent, m.start()):
+                    continue
+                claimed = _pct_value(m)
                 if abs(claimed - abs(actual)) <= 1.0:
                     rep.add(Finding("正文百分比",
                                     f"正文称「{m.group(0).strip()}」，XBRL 实算 {actual:+.1f}% —— 一致",

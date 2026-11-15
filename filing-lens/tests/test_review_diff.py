@@ -245,3 +245,55 @@ def test_text_percent_skips_when_the_base_crosses_zero():
     assert not [x for x in rep.findings if x.severity == "mismatch"], \
         [x.what for x in rep.findings]
     assert any("跨零" in s for _, s in rep.skipped), [s for _, s in rep.skipped]
+
+
+# ---------- 2b. 百分比必须绑在三件事上：主语、期间、子句 ----------
+# 2026-11-14 语料普查（scripts/check_coverage.py）发现三处真假阳，全部是「百分比
+# 出现在含 total revenue 的句子里，但它说的是别的东西」：
+#   Cisco Item 7¶54「Within total revenue, product revenue increased by 16%」——分部口径
+#   Cisco Item 7¶65「total revenue increased by 18%」——那是**第四季度**同比，不是全年
+#   Meta  Item 7¶182「increased 17%, 19%, and 17% between the third and fourth quarters」
+#                        ——季度间环比（季节性例子），与年度同比无关
+# 三条都属于「句子对了、绑错了对象」，只看关键词在不在句子里是挡不住的。
+
+@pytest.fixture(scope="module")
+def cisco():
+    return rd.build("0000858877", DATA)
+
+
+@pytest.fixture(scope="module")
+def meta_platforms():
+    return rd.build("0001326801", DATA)
+
+
+def test_quarterly_percent_is_not_compared_to_annual(cisco):
+    """第四季度同比 18% 不能拿去比全年同比 11.8%。"""
+    bad = [f for f in cisco.findings
+           if f.check == "正文百分比" and f.severity == "mismatch"]
+    assert bad == [], [f.what for f in bad]
+
+
+def test_category_percent_inside_total_revenue_is_not_flagged(cisco):
+    """「Within total revenue, product revenue increased by 16%」是产品口径。"""
+    bad = [f for f in cisco.findings
+           if f.check == "正文百分比" and f.severity == "mismatch" and "16%" in f.what]
+    assert bad == []
+
+
+def test_sequential_seasonality_percent_is_not_flagged(meta_platforms):
+    """季度间环比（17%/19%/17%）不是年度同比。"""
+    bad = [f for f in meta_platforms.findings
+           if f.check == "正文百分比" and f.severity == "mismatch"]
+    assert bad == [], [f.what for f in bad]
+
+
+def test_injected_percent_defect_is_still_flagged():
+    """正对照：把全年同比那处的 12% 改成 42% → 必须抓，别把守卫做成一刀切屏蔽。"""
+    rep = rd.build("0000858877", DATA, inject=(
+        "an increase of 12% compared with fiscal 2025",
+        "an increase of 42% compared with fiscal 2025",
+    ))
+    mism = [f for f in rep.findings
+            if f.check == "正文百分比" and f.severity == "mismatch"]
+    assert len(mism) == 1, [f.what for f in mism]
+    assert "42%" in mism[0].what

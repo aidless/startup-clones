@@ -3,7 +3,7 @@
 
 PROJECTS := geo-radar filing-lens audit-loop cruxline agent-inbox agent-store console
 
-.PHONY: test demo clean matrix matrix-record e2e hooks
+.PHONY: test demo clean matrix matrix-record e2e hooks checks
 
 test:
 	@for p in $(PROJECTS); do \
@@ -18,6 +18,10 @@ matrix:
 # 改过解析器后重记基线（会覆盖 docs/corpus-matrix.json，再跑 make matrix 复核）
 matrix-record:
 	python3 scripts/corpus_matrix.py --record docs/corpus-matrix.json
+
+# 六项检查在 22 份 10-K 上的覆盖普查（约 3 分钟）：看每项是「核过了」还是「没在测」
+checks:
+	cd filing-lens && python3 scripts/check_coverage.py
 
 # 挂上版本化钩子（pre-push 跑语料矩阵）
 hooks:

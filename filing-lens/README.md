@@ -88,6 +88,38 @@ python3 scripts/review_diff.py 0001730168 --inject \
 
 样本与结论都落盘了：`../go-to-market/samples/prospects/`（三家真事务所客户，含 PDF 与 accession）。
 
+### 六项检查在 22 份真实 10-K 上分别命中多少（2026-11-14 普查）
+
+「没报问题」有两个来源：核过了、和根本没测。分不开这两个，报表就是在给自己贴金。
+`scripts/check_coverage.py` 把每项检查的三种结局分开数：
+
+```bash
+python3 scripts/check_coverage.py          # 人读表
+python3 scripts/check_coverage.py --json   # 机器读
+```
+
+| 检查 | mismatch | look | info | skipped | 说明 |
+|---|---|---|---|---|---|
+| 现金流量口径 | 0 | 22 | 0 | 0 | 22 份都拿到两个科目，逐条给出「流量 vs 存量」 |
+| 员工数 | 0 | 2 | 17 | 4 | 4 份没出现可解析的人数句式（写在「未覆盖」里） |
+| 同比口径 | 0 | 1 | 36 | 0 | 逐年比对营收/净利的方向与幅度 |
+| 分部加总 | 0 | 0 | 21 | 0 | 分部与合计的差额（不判对错，只给数） |
+| 正文百分比 | 0 | 0 | 5 | 34 | **只有 8 处百分比真正绑到合计口径**（见下） |
+| 正文与 XBRL | 0 | 0 | 18 | 20 | 同指标两处取值的比对 |
+| 风险因素年度差异 | 0 | 0 | 0 | 22 | `data/` 每个 CIK 只有一份 10-K，没有上年可比 |
+
+这一轮普查本身抓出三类**假阳**，全是「句子对了、绑错了对象」，都已修并钉了测试
+（`tests/test_percent_binding.py`）：
+
+- Cisco「Within total revenue, **product** revenue increased by 16%」——分部口径；
+- Cisco「For the **fourth quarter** … total revenue increased by 18%」——季度同比；
+- Intel「**Data Center** net revenue … increased by 32%」、Meta「**RL** revenue … increased 3%」——分部名修饰主语。
+
+修完的代价是**收紧**：22 份里 119 处百分比表述，只有 8 句能绑到合计口径（`Net sales increased 3%`、
+`Total revenue was $63.3 billion, an increase of 12%`、`Net revenue … up 12%` 三种写法）。
+其余 111 处要么主语是分部、要么句子在讲季度，一律不判——**这条线宁可漏，不给合伙人递假警报**。
+绑上之后 5 条与 XBRL 一致（info），0 条 mismatch：这是核对结果，不是「没测」。
+
 ## 这个项目真正的难点不是 LLM
 
 投研问答的失败模式，90% 不是「模型不够聪明」，而是这三件：
