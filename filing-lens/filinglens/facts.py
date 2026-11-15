@@ -101,7 +101,14 @@ def load_companyfacts(payload: dict, db_path: str | Path = ":memory:") -> sqlite
     # 默认 True 时服务端会随机抛「SQLite objects created in a thread can only be used in
     # that same thread」——console 的 filing 面板每 3 次请求炸 1 次（实测 12 轮 3 次）。
     # 载入完成后本连接只做只读查询，因此允许跨线程使用是安全的。
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    raw = str(db_path)
+    conn = sqlite3.connect(raw, timeout=5.0, check_same_thread=False)
+    # busy_timeout：console 的读取线程与 ingest 进程会同时碰同一个文件库；默认 0 时
+    # 立刻 database is locked。WAL 让读不阻塞写（https://sqlite.org/wal.html §1），
+    # 但 §9 说明 WAL 下仍可能 SQLITE_BUSY，所以两个 PRAGMA 都要。:memory: 跳过 WAL。
+    conn.execute("PRAGMA busy_timeout=5000")
+    if raw != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     _ensure_schema(conn)
     cik = str(payload.get("cik", "")).zfill(10)

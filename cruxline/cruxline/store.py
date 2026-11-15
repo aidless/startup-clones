@@ -21,7 +21,13 @@ CREATE INDEX IF NOT EXISTS idx_labels_case ON labels(case_id);
 
 
 def connect(path: str = ":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 等待锁 + WAL：两人同时标同一批用例时，第二个写者应等 5 秒而不是立刻
+    # `database is locked`；WAL 让读不阻塞写（https://sqlite.org/wal.html §1/§9）。
+    # `:memory:` 每个连接一个库，WAL 无意义，跳过。
+    conn = sqlite3.connect(path, timeout=5.0)
+    conn.execute("PRAGMA busy_timeout=5000")
+    if path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     return conn
 

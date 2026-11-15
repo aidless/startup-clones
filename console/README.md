@@ -42,6 +42,21 @@ done
 3. **演示用假模型是安全的**：GEO 面板用 `MockProvider`（确定性），不烧 token、不联网；
    10-K 面板读本地 `data/`，不碰 SEC。
 
+## 错误响应是问题文档
+
+按 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)，错误一律返回
+`application/problem+json`，四个成员 `type` / `title` / `status` / `detail` 齐全，
+`status` 与 HTTP 状态码一致；参数校验失败的逐条错误放在 `errors` 扩展里：
+
+```bash
+curl -s 'http://127.0.0.1:8800/api/filing?cik=not-a-cik' -i | head -4
+# HTTP/1.1 400 Bad Request
+# content-type: application/problem+json
+```
+
+**「本地没这份 10-K」不是错误**：那是正常状态，仍是 `200` + `{"status": "no_data", …}`，
+面板要在卡片里就地解释（「先跑 fetch_edgar.py」），不能弹成红色报错。
+
 ## 已知局限
 
 - 无鉴权，只在本机演示用。

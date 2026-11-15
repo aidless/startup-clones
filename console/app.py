@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 from dataclasses import asdict
@@ -29,9 +30,35 @@ for sub in ("geo-radar", "filing-lens", "audit-loop", "cruxline", "agent-inbox",
         sys.path.insert(0, str(p))
 
 from fastapi import FastAPI, Query  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
 app = FastAPI(title="startup-clones console", docs_url="/api/docs")
+
+PROBLEM_TYPE = "https://github.com/aidless/deepseek-workspace/blob/main/startup-clones/console/README.md#errors"
+_CIK_RE = re.compile(r"^\d{1,10}$")
+
+
+def problem(status: int, title: str, detail: str, **ext) -> JSONResponse:
+    """RFC 9457 的问题文档（https://www.rfc-editor.org/rfc/rfc9457）。
+
+    五个成员：`type`（文档 URL）、`title`（简短人读）、`status`（与 HTTP 状态一致）、
+    `detail`（这一次发生了什么）、`instance`（可省）。扩展成员加在顶层，不塞进 detail。
+    媒体的 `application/problem+json` 让客户端不必猜「这是数据还是错误」。
+    """
+    body = {"type": PROBLEM_TYPE, "title": title, "status": status, "detail": detail}
+    body.update(ext)
+    return JSONResponse(body, status_code=status,
+                        media_type="application/problem+json")
+
+
+@app.exception_handler(RequestValidationError)
+def validation_error_handler(request, exc: RequestValidationError) -> JSONResponse:
+    """参数校验失败改成问题文档；逐条错误放在 `errors` 扩展里，别丢原始信息。"""
+    errors = [{"loc": list(e.get("loc", [])), "msg": e.get("msg", ""),
+               "type": e.get("type", "")} for e in exc.errors()]
+    return problem(422, "请求参数不合法",
+                   "一个或多个查询参数没通过校验，详见 errors。", errors=errors)
 
 PROJECTS = [
     ("geo", "geo-radar", "AI 搜索里谁被提到", "同一批买家问题问不同模型，量份额与位次"),
@@ -110,8 +137,12 @@ def _filing_service(cik: str, doc: Path, data: Path):
 @app.get("/api/filing")
 def filing(q: str = Query("营收多少", min_length=2),
            cik: str = Query("0000320193")) -> JSONResponse:
+    if not _CIK_RE.match(cik):
+        # 别把用户输入直接拼进 glob：`*` 会匹配到别家公司的文件，`../` 会越出目录。
+        return problem(400, "CIK 格式不对",
+                       f"CIK 应为 1–10 位数字，收到 {cik!r}。")
     data = ROOT / "filing-lens" / "data"
-    hits = sorted(data.glob(f"{cik}_10k_*.htm"))
+    hits = sorted(data.glob(f"{cik.zfill(10)}_10k_*.htm"))
     if not hits:
         return JSONResponse({"error": "data/ 下没有该 CIK 的 10-K，先跑 filing-lens/scripts/fetch_edgar.py",
                              "status": "no_data"}, status_code=200)

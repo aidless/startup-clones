@@ -49,3 +49,45 @@ python3 scripts/polish_audit.py   # 7 个项目硬项全过
 No module named 'cruxline.stats' / 'georadar.stats'`；`agent-inbox` 是
 `FAILED test_comment_embedded_address_is_not_the_sender`；`agent-store` 是
 `Failed: DID NOT RAISE RegistryError`。四个都因「机制不在」而红，不是因为断言写错。
+
+## 第二轮（2026-11-14）：幂等键指纹 + sqlite 的等待与 WAL + 问题文档
+
+第一轮借的是「怎么量」（区间、指纹、解析、验签），这一轮借的是**「怎么不出错」**——
+三个机制都在回答同一个问题：调用方重投一次、两个进程同时写一次、参数传错一次，会怎样。
+
+| # | 借来的机制 | 来源（原文要点） | 落点 | 判据（先红后绿） |
+|---|---|---|---|---|
+| C-1 | 幂等键必须唯一，且**不得用于不同载荷**；复用不同载荷 → 冲突 | [draft-ietf-httpapi-idempotency-key-header-08](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header) §2.2 *「The idempotency key MUST be unique and MUST NOT be reused with another request with a different request payload」*；§2.4 指纹由 payload 生成；§2.6 已完成→按用户意图回放、**未完成→资源冲突**；§2.7 复用不同 payload → `422` | `agent-store/agentstore/runtime.py:52`（`request_fingerprint`：`agent` + 排序后的 `needs` + `tokens` 的 sha256 前 16 位）、`:70`（重放前先比指纹，不同则返回 `idempotency_conflict`）、`agentstore/meter.py`（`usage.fingerprint` 列 + `_migrate_usage` 兼容旧库 + `replay()` 读回指纹） | `agent-store/tests/test_borrowed_idempotency.py`：同键换 agent / 加 tokens → 冲突且 `duplicate=False`；**同一载荷重投仍是回放**（`duplicate=True`，handler 只跑一次）；旧库无该列时自动迁移 |
+| C-2 | 写者要**等锁**，读者不要被写者堵住 | [sqlite.org/wal.html](https://sqlite.org/wal.html) §1 *「Readers do not block writers and a writer does not block readers」*；§9 **WAL 下仍可能返回 SQLITE_BUSY**（独占锁/最后一个连接关闭/崩溃恢复）→ 必须配 `busy_timeout` | `agent-store/agentstore/meter.py:130`（`_connect`：`timeout=5.0` + `PRAGMA busy_timeout=5000` + 文件库 `PRAGMA journal_mode=WAL`）、`geo-radar/georadar/store.py:53`（`_tune`）、`filing-lens/filinglens/facts.py:104`、`cruxline/cruxline/store.py:24` | `agent-store/tests/test_borrowed_idempotency.py::test_ledger_waits_for_a_lock_instead_of_failing`（另一连接 `BEGIN IMMEDIATE` 后，写者 0.4 秒仍在等，提交后成功写入）、`geo-radar/tests/test_borrowed_sqlite.py`、`filing-lens/tests/test_borrowed_sqlite.py`、`cruxline/tests/test_borrowed_sqlite.py`（各 2 例：文件库 `journal_mode=wal` 且 `busy_timeout>=1000`；`:memory:` 正对照不报错） |
+| C-3 | 错误响应是**一种文档格式**，不是随便一个 `{"error": …}` | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)：`type`/`title`/`status`/`detail`/`instance` + 媒体类型 `application/problem+json` | `console/app.py:50`（`problem()`）、`:63`（`RequestValidationError` 处理器，逐条错误放 `errors` 扩展）、`:126`（`/api/filing` 的 CIK 格式校验 → 400） | `console/tests/test_problem_json.py`：坏 CIK → 400 且 `content-type: application/problem+json`、四成员齐全、`status` 与 HTTP 状态一致；`q` 太短 → 422 且带 `errors`；**两个正对照**——「本地没这份 10-K」仍是 200 + `status=no_data`（面板要就地解释，不是错误），正常回答仍是普通 `application/json` 且不含 `type` |
+
+顺带修掉一个输入拼接：`/api/filing` 原先把 `cik` 直接插进 `glob(f"{cik}_10k_*.htm")`，
+`cik=*` 会命中别家公司的文件。现在先按 `^\d{1,10}$` 校验再 `zfill(10)`。
+
+### 读了但没借（第二轮）
+
+| 机制 | 来源 | 为什么不借 |
+|---|---|---|
+| 幂等键 24 小时过期 | Stripe `Idempotency-Key` 的实现约定 | 我们的键是调用方自带的 `request_id`，落在 `usage` 表里就是账单凭证；过期删除等于删账。要清理由使用方按审计周期决定，写死 24h 会把「迟到的重投」变成二次计费 |
+| 冲突响应一律 422 | idempotency-key §2.7 | 原文对**未完成**的并发请求给 `409`，只有「已完成 + 不同载荷」才是 `422`。我们只有单进程内存 `_done` + 库，没有长事务，所以只实现 422 这一支；等真接异步执行再补 409 |
+| 把 `sqlite` 升级到 ≥3.51.3 绕开 WAL-reset bug | [wal.html §11](https://sqlite.org/wal.html)（bug 覆盖 3.7.0–3.51.2，3.51.3 修） | 本机是 3.45.1，bug 存在，但触发条件是**两个连接同时写/checkpoint**且在 checkpoint 中重置 WAL——官方措辞是概率与「SSD 故障、宇宙射线」同级。为它绑死 Python 版本不划算；已在 `filing-lens/README.md` 与本文记为已知边界 |
+| 幂等键的固定格式（如 UUID v4）| idempotency-key §2.2 | 现有 `request_id` 来自调用方（`req-1`、`req-lock`），测试与演示都靠可读 id。强制 UUID 只会让日志更难读，唯一性由 `PRIMARY KEY (buyer, request_id)` 保证 |
+
+### 验证
+
+```bash
+cd startup-clones
+python3 -m pytest agent-store/tests/test_borrowed_idempotency.py \
+                 geo-radar/tests/test_borrowed_sqlite.py \
+                 filing-lens/tests/test_borrowed_sqlite.py \
+                 cruxline/tests/test_borrowed_sqlite.py \
+                 console/tests/test_problem_json.py -q      # 16 passed
+python3 -m pytest -q                                        # 全套件
+```
+
+先红后绿的证据：C-1 首跑 `AttributeError: 'tuple' object has no attribute 'version'`（我把
+`_done` 的值改成 `(Execution, fingerprint)` 后有一处还在用旧元组）与
+`AssertionError: 写者没等锁就返回了`（测试自己在主线程建了连接却拿到子线程用——
+sqlite 默认 `check_same_thread=True`，先抛 `ProgrammingError` 根本走不到锁）；C-2 三份新测试
+全是 `assert 'delete' == 'wal'`；C-3 两份是 `AssertionError: application/json`。
+四个红都不是断言写错，而是机制不在。

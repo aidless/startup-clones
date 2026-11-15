@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Callable
 
 from .registry import Registry, RegistryError
+
+
+def request_fingerprint(agent_id: str, needs: tuple[str, ...], tokens: int) -> str:
+    """请求载荷指纹（draft-ietf-httpapi-idempotency-key-header §2.4）。
+
+    键（request_id）只回答「是不是同一次请求」，指纹回答「还是不是同一份请求」：
+    负载变了（换了 agent、多要了权限、token 数变了），同一个键就不再合法。
+    只对会进计费的字段取指纹，避免把无关参数算进去。
+    """
+    payload = json.dumps({"agent": agent_id, "needs": sorted(needs), "tokens": int(tokens)},
+                         sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass
@@ -41,7 +55,8 @@ class Runtime:
         # 已执行的请求结果：重投直接回放，不重跑 handler。
         # 这只是**进程内缓存**；权威在 ledger（usage 表按 (buyer, request_id) 记执行结果）。
         # 只靠进程内字典时，重启 / 换 worker / 多副本下同一 request_id 会重跑 handler。
-        self._done: dict[tuple[str, str], Execution] = {}
+        # 值里带指纹：同一个键换一份载荷，回放旧结果等于把别人的答案交给你。
+        self._done: dict[tuple[str, str], tuple[Execution, str]] = {}
 
     def execute(self, buyer: str, agent_id: str,
                 handler: Callable[[str], tuple[str, int]],
@@ -49,18 +64,30 @@ class Runtime:
                 tokens: int = 0) -> Execution:
         # 幂等判断先于一切：已落库的请求直接回放（不验权限、不再执行、不再计费）。
         # 否则「重投」在重启后会被当成新请求，handler 的副作用（发邮件、动账）再发生一次。
+        fp = request_fingerprint(agent_id, needs, tokens)
         seen = self._done.get((buyer, request_id))
         if seen is None and self.ledger is not None:
             row = self.ledger.replay(buyer, request_id)
             if row is not None:
-                seen = Execution(request_id, row.agent_id, row.version, buyer, row.ok,
-                                 output=row.output, error=row.error,
-                                 charged_cents=row.cents, duplicate=True)
+                ex = Execution(request_id, row.agent_id, row.version, buyer, row.ok,
+                               output=row.output, error=row.error,
+                               charged_cents=row.cents, duplicate=True)
+                seen = (ex, getattr(row, "fingerprint", "") or "")
                 self._done[(buyer, request_id)] = seen
         if seen is not None:
-            replay = Execution(request_id, agent_id, seen.version, buyer, seen.ok,
-                               output=seen.output, error=seen.error,
-                               charged_cents=seen.charged_cents, duplicate=True)
+            seen_ex, seen_fp = seen
+            if seen_fp and seen_fp != fp:
+                # 422 语义：键必须唯一，且不得用于不同载荷的请求（§2.2 / §2.7）。
+                conflict = Execution(request_id, agent_id, seen_ex.version, buyer, False,
+                                     error=f"idempotency_conflict: 该键已用于 "
+                                           f"{seen_ex.agent_id}@{seen_ex.version}，本次载荷不同",
+                                     duplicate=False)
+                _audit(conflict, "gate", result="idempotency_conflict",
+                       stored=" " or seen_ex.agent_id, current=agent_id)
+                return conflict
+            replay = Execution(request_id, agent_id, seen_ex.version, buyer, seen_ex.ok,
+                               output=seen_ex.output, error=seen_ex.error,
+                               charged_cents=seen_ex.charged_cents, duplicate=True)
             _audit(replay, "gate", result="duplicate", dedup=True)
             return replay
 
@@ -97,14 +124,14 @@ class Runtime:
         ex.ok, ex.output = True, output
         _audit(ex, "execute", result="ok", units=units)
 
-        self._done[(buyer, request_id)] = ex
+        self._done[(buyer, request_id)] = (ex, fp)
 
         if self.ledger is not None:
             try:
                 record = self.ledger.record(
                     buyer, agent_id, v.version, ex.request_id,
                     units=units if v.manifest.pricing.kind != "per_token" else max(units, tokens),
-                    ok=ex.ok, output=ex.output, error=ex.error)
+                    ok=ex.ok, output=ex.output, error=ex.error, fingerprint=fp)
             except KeyError as exc:
                 # 计量器不认识这个清单（没 register）→ 原实现让 KeyError 穿透到调用方，
                 # 此时 handler 已经跑完、模型调用已经花掉，调用方却拿到裸 KeyError。

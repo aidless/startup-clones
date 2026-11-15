@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS usage (
     ok         INTEGER NOT NULL DEFAULT 1,
     output     TEXT NOT NULL DEFAULT '',
     error      TEXT NOT NULL DEFAULT '',
+    -- 请求指纹（见 draft-ietf-httpapi-idempotency-key-header §2.4）：
+    -- 同一个键只能配同一份载荷；载荷变了要报冲突，不能把上一次的结果回放给新请求。
+    fingerprint TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (buyer, request_id)
 );
 CREATE TABLE IF NOT EXISTS statements (
@@ -63,6 +66,7 @@ class UsageRecord:
     ok: bool = True
     output: str = ""
     error: str = ""
+    fingerprint: str = ""       # 本次请求的载荷指纹（重放时用来判断「是不是同一个请求」）
 
 
 @dataclass
@@ -123,9 +127,24 @@ class Statement:
         )
 
 
+def _connect(db_path: str) -> sqlite3.Connection:
+    """连接工厂：写者要能等锁，读者不要被写者堵住。
+
+    - `busy_timeout`：另一个连接持写锁时先等 5 秒再报错。默认 0，第二个写者会
+      立刻 `database is locked`（实测并发记账的第一条就失败）。
+    - `journal_mode=WAL`：读不阻塞写、写不阻塞读（https://sqlite.org/wal.html §1）。
+      `:memory:` 上每个连接是各自的库，WAL 无意义，跳过。
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    conn.execute("PRAGMA busy_timeout=5000")
+    if db_path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
 class Ledger:
     def __init__(self, db_path: str = ":memory:", now: str = "2026-11-12T00:00:00Z"):
-        self.conn = sqlite3.connect(db_path)
+        self.conn = _connect(db_path)
         self.conn.executescript(SCHEMA)
         self._migrate_usage()
         self._now = now
@@ -136,7 +155,8 @@ class Ledger:
         have = {row[1] for row in self.conn.execute("PRAGMA table_info(usage)").fetchall()}
         for col, ddl in (("ok", "INTEGER NOT NULL DEFAULT 1"),
                          ("output", "TEXT NOT NULL DEFAULT ''"),
-                         ("error", "TEXT NOT NULL DEFAULT ''")):
+                         ("error", "TEXT NOT NULL DEFAULT ''"),
+                         ("fingerprint", "TEXT NOT NULL DEFAULT ''")):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE usage ADD COLUMN {col} {ddl}")
         self.conn.commit()
@@ -160,7 +180,8 @@ class Ledger:
 
     def record(self, buyer: str, agent_id: str, version: str,
                request_id: str, units: int, cents: int | None = None,
-               ok: bool = True, output: str = "", error: str = "") -> UsageRecord:
+               ok: bool = True, output: str = "", error: str = "",
+               fingerprint: str = "") -> UsageRecord:
         """记一次调用。cents 仅用于测试按分计价的边界（默认按清单算价）。"""
         seen = self.replay(buyer, request_id)
         if seen is not None:
@@ -168,10 +189,10 @@ class Ledger:
         if cents is None:
             cents = self.price(agent_id, version, units)
         self.conn.execute(
-            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts,ok,output,error) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO usage(request_id,buyer,agent_id,version,units,cents,ts,ok,output,error,"
+            "fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (request_id, buyer, agent_id, version, units, cents, self._now,
-             1 if ok else 0, output, error))
+             1 if ok else 0, output, error, fingerprint))
         self.conn.commit()
         return UsageRecord(request_id, buyer, agent_id, version, units, cents,
                            ok=ok, output=output, error=error)
@@ -182,12 +203,14 @@ class Ledger:
         这张表就是幂等的**权威**：Runtime 的重投判断以它为准，进程内字典只当缓存。
         """
         row = self.conn.execute(
-            "SELECT request_id,buyer,agent_id,version,units,cents,ok,output,error "
+            "SELECT request_id,buyer,agent_id,version,units,cents,ok,output,error,fingerprint "
             "FROM usage WHERE buyer=? AND request_id=?", (buyer, request_id)).fetchone()
         if row is None:
             return None
-        return UsageRecord(row[0], row[1], row[2], row[3], row[4], row[5], duplicate=True,
-                           ok=bool(row[6]), output=row[7] or "", error=row[8] or "")
+        rec = UsageRecord(row[0], row[1], row[2], row[3], row[4], row[5], duplicate=True,
+                          ok=bool(row[6]), output=row[7] or "", error=row[8] or "")
+        rec.fingerprint = row[9] or ""
+        return rec
 
     def statement(self, buyer: str, developers: dict[str, str],
                   fee_pct: int = 20) -> Statement:

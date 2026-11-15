@@ -51,8 +51,22 @@ CREATE INDEX IF NOT EXISTS idx_mentions_run ON mentions(run_id);
 """
 
 
+def _tune(conn: sqlite3.Connection, path: str) -> None:
+    """等待锁 + WAL：读不阻塞写、写不阻塞读（https://sqlite.org/wal.html §1）。
+
+    默认 busy_timeout=0，另一个进程持写锁时立刻 `database is locked`；改成等 5 秒。
+    WAL 下仍可能返回 SQLITE_BUSY（§9），所以两者都要。`:memory:` 每个连接是各自的
+    库，WAL 无意义，跳过。
+    """
+    conn.execute("PRAGMA busy_timeout=5000")
+    if path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+
+
 def connect(path: str | Path = "georadar.db") -> sqlite3.Connection:
-    conn = sqlite3.connect(str(path))
+    raw = str(path)
+    conn = sqlite3.connect(raw, timeout=5.0)
+    _tune(conn, raw)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     return conn
