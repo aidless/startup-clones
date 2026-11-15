@@ -187,13 +187,13 @@ python3 scripts/batch_bench.py            # 缺哪份抓哪份（真去 SEC，�
 python3 scripts/batch_bench.py --no-fetch # 只用 data/ 里已经有的
 ```
 
-`data/` 到位后，仓库根部 `python3 -m pytest -q` 应当 **560 passed**（0 skip，0 failed）。
+`data/` 到位后，仓库根部 `python3 -m pytest -q` 应当 **全部通过**（0 skip，0 failed）。
 
 ### 干净检出（没有 `data/`）
 
 不是红的，是**明确 skip**：需要真实申报的用例逐条跳过，并在 skip reason 里打印上面
 那条抓取命令；一个模块里如果还有用合成数据的用例，那些照常跑（不是模块顶一刀切）。
-当前的实测形状是 **511 passed / 41 skipped / 0 failed**：
+当前的实测形状是 **554 passed / 41 skipped / 0 failed**：
 
 | 模块 | skip 条数 | 缺的是哪份语料 |
 |---|---|---|
