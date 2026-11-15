@@ -3,6 +3,8 @@
     python -m auditloop.cli demo
     python -m auditloop.cli run --entity "Acme Industrial" --out out/workpaper.xlsx
     python -m auditloop.cli analytics --facts tests/fixtures/acme_annual.json [--json]
+    python -m auditloop.cli init [--dir out/init]
+    python -m auditloop.cli analytics --facts out/init/facts.xlsx
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ from . import __version__
 from . import checks, fixtures
 from .analytics import assess, series_from_years
 from .engine import AuditRun
+from .excel import read_facts, write_facts_template
 from .models import COMPLETENESS, CUTOFF, EXISTENCE, VALUATION
 from .workpaper import write_workpaper
 
@@ -179,13 +182,19 @@ def cmd_analytics(args: argparse.Namespace) -> int:
     退出码仍是 0，流水线上它与「真查过且干净」长得一模一样 —— 这是审计里
     最贵的一种失败（没查被当成查过）。部分未判定时走 stderr 说明，仍按 0/1。
     """
+    # .xlsx 与 .json 走同一个入口：审计师手上是 Excel，脚本里是 JSON，
+    # 两种输入必须产出同构的 dict —— 否则「换一种填法结论就变」。
     try:
-        payload = json.loads(Path(args.facts).read_text(encoding="utf-8"))
+        payload = read_facts(args.facts)
     except FileNotFoundError:
         print(f"找不到 facts 文件：{args.facts}", file=sys.stderr)
         return 2
     except json.JSONDecodeError as exc:
         print(f"facts 不是合法 JSON：{args.facts}（{exc}）", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        # Excel 表头/年度坏掉、扩展名不认识、JSON 结构不对，都是「没跑成」
+        print(f"facts 内容不可用：{args.facts}（{exc}）", file=sys.stderr)
         return 2
     except OSError as exc:
         print(f"facts 读取失败：{args.facts}（{exc}）", file=sys.stderr)
@@ -231,6 +240,23 @@ def cmd_analytics(args: argparse.Namespace) -> int:
     return 1 if anomalies else 0
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    """写一张中文表头的填空模板，并把下一步命令原样印出来。
+
+    路径用绝对路径打印：审计师复制这行就能跑，不用自己拼目录。
+    """
+    target = Path(args.dir) / "facts.xlsx"
+    try:
+        path = write_facts_template(target)
+    except OSError as exc:
+        print(f"模板写入失败：{target}（{exc}）", file=sys.stderr)
+        return 2
+    print(f"模板已写入：{path}")
+    print("在 Excel 里把四个示例行换成自家四年数据（空着不填表示该年没有这个数），")
+    print(f"填好后运行：auditloop analytics --facts {path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="auditloop", description="审计底稿自动化")
     ap.add_argument("--version", action="version",
@@ -245,9 +271,12 @@ def main(argv: list[str] | None = None) -> int:
     d.set_defaults(func=cmd_demo)
     a = sub.add_parser("analytics", help="分析性程序：比率与趋势的逐年复核")
     a.add_argument("--facts", required=True,
-                   help="年度序列 JSON（{\"entity\": ..., \"years\": {\"2026\": {...}}}）")
+                   help="年度序列 Excel（.xlsx，用 init 生成）或 JSON（{\"entity\": ..., \"years\": {...}}）")
     a.add_argument("--json", action="store_true", help="输出结构化结果")
     a.set_defaults(func=cmd_analytics)
+    i = sub.add_parser("init", help="生成年度数据填空模板（Excel）")
+    i.add_argument("--dir", default="out/init", help="写到哪个目录（默认 out/init）")
+    i.set_defaults(func=cmd_init)
     args = ap.parse_args(argv)
     return args.func(args)
 

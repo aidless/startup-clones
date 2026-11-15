@@ -17,23 +17,15 @@ from .calib import calibrate
 from .judge import Judge
 from .regress import diff
 from .rubrics import agent_rubric
+from .io import read_traces
 from .judge import DEFAULT_RUBRIC
 from .store import add_label, connect, latest_verdicts, load_labels
-from .trace import Trace, load_traces
 
 
-def _read_traces(path: str) -> list[Trace]:
-    """读轨迹文件：既接受 JSON 数组，也接受一行一条的 JSONL。
-
-    仓库自带语料是 `data/traces.jsonl`（60 条实录），而这里原先只做
-    `json.loads(整份文件)` —— 直接 `JSONDecodeError: Extra data`，
-    等于真实语料在命令行上根本判不了（单元测试喂内存对象，从没走过文件）。
-    """
-    text = open(path, encoding="utf-8").read().strip()
-    if text.startswith("["):
-        return load_traces(json.loads(text))
-    items = [json.loads(line) for line in text.splitlines() if line.strip()]
-    return load_traces(items)
+# 轨迹读取统一走 cruxline.io（容器格式 + 字段别名 + 认不出来的记录报错），
+# 这里不再保留第二份实现：两份实现迟早对不上（旧版只认 case_id/tool_calls，
+# 于是 OpenAI 风格导出的 steps 会被静默读成「零工具调用」并判成 1.0 PASS）。
+_read_traces = read_traces
 
 
 def _pass_map(verdicts) -> dict[str, bool]:
@@ -64,7 +56,7 @@ def _rubric_for(name: str):
 
 
 def cmd_judge(args: argparse.Namespace) -> int:
-    traces = _read_traces(args.traces)
+    traces = read_traces(args.traces)
     judge = Judge(rubric=_rubric_for(args.rubric), threshold=args.threshold)
     verdicts = judge.score_all(traces)
     conn = connect(args.db)
@@ -88,7 +80,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
 
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
-    traces = _read_traces(args.traces)
+    traces = read_traces(args.traces)
     human = json.loads(open(args.labels, encoding="utf-8").read())
     # 必须用与 judge 同一个 `_rubric_for(args.rubric)`：原先写死
     # `Judge(threshold=...)`（= DEFAULT_RUBRIC），校的是另一把尺，

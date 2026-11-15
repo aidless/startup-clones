@@ -98,6 +98,34 @@ def cmd_statement(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quickstart(args: argparse.Namespace) -> int:
+    """在当前目录生成可直接跑的最小工作区，并打印接下来三条命令。"""
+    from pathlib import Path
+
+    from . import quickstart
+
+    dirname = args.dir or quickstart.WORKSPACE_DIRNAME
+    target = Path(dirname)
+    results = quickstart.write_workspace(target, force=args.force)
+
+    created = sum(1 for _, action in results if action != "skip")
+    print(f"== quickstart: {dirname}（新建/覆盖 {created} 个，跳过 "
+          f"{len(results) - created} 个）==")
+    for rel, action in results:
+        note = "（已存在，原样保留）" if action == "skip" else ""
+        print(f"  {action:<9} {rel}{note}")
+
+    if created == 0:
+        print("\n所有文件都已存在，没有覆盖任何东西（要重置加 --force）。")
+
+    print("\n接下来三条命令：")
+    for i, command in enumerate(quickstart.NEXT_STEPS, 1):
+        print(f"  {i}) {command.format(dirname=dirname)}")
+    print("\n第 2 条会打印发布 → 安装 → 执行 → 同键重放（duplicate=True）"
+          " → 同键换载荷（idempotency_conflict）→ 账单。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="agentstore",
@@ -120,6 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="出账幂等键（scope 为 buyer）：重复时原样回放首次快照")
     s.add_argument("--json", action="store_true", help="stdout 输出单个 JSON 对象")
     s.set_defaults(func=cmd_statement)
+    q = sub.add_parser("quickstart", help="在当前目录生成一个三分钟能跑的最小工作区")
+    q.add_argument("--dir", default=None,
+                   help="生成到哪个目录（默认 ./agentstore-quickstart）")
+    q.add_argument("--force", action="store_true",
+                   help="覆盖已存在的文件（默认跳过，不碰用户改过的东西）")
+    q.set_defaults(func=cmd_quickstart)
+
     ap.set_defaults(func=cmd_demo)     # 不带子命令时保持旧行为：直接跑 demo
     return ap
 

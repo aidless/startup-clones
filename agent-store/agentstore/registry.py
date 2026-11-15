@@ -158,5 +158,6 @@ def _load(s: str) -> AgentManifest:
     from .manifest import Pricing
     d = json.loads(s)
     d["permissions"] = tuple(d["permissions"])
+    d["needs"] = tuple(d.get("needs") or ())
     d["pricing"] = Pricing(**d["pricing"])
     return AgentManifest(**d)

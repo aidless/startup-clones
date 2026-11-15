@@ -2,11 +2,11 @@
 
 六个 **可运行的内核**（外加一个把它们串起来的演示台 `console/`），分别对应 2026 年 10–11 月刚融资的六家美国公司的产品形态。目的不是复制产品，而是把「这类产品为什么能卖钱」拆成可验证的代码：每条商业纪律都对应一个测试。
 
-**565 个测试，0 个 mock 掉的断言，全部离线可跑**（需要 164MB 语料的 41 条在干净检出里自动 skip，见 `filing-lens/README.md`「先跑测试要备好语料」）。
+**599 个测试，0 个 mock 掉的断言，全部离线可跑**（需要 164MB 语料的 41 条在干净检出里自动 skip，见 `filing-lens/README.md`「先跑测试要备好语料」）。
 
 ```bash
 git clone <this-repo> && cd startup-clones
-make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 565 passed
+make test      # 七个子项目逐个跑；根目录 `python3 -m pytest` 一次跑全 599 passed
 make demo      # 六个 demo 各跑一遍（无需任何 API key）
 make e2e       # 端到端串联：十个阶段跨六个项目真跑一次（约 40 秒）
 make matrix    # 全语料解析矩阵：22 份 10-K 逐份解析并与基线比对（约 2 分钟）
@@ -92,7 +92,7 @@ cd startup-clones && python3 console/app.py --port 8800    # → http://127.0.0.
 
 ## 一句话状态（2026-11-14）
 
-- 测试：**565 passed**（geo 54 / filing 156 / audit 71 / crux 80 / inbox 75 / store 59 / console 16 / 根目录契约测试 47；另 `go-to-market/` 是内部商业包，其 8 个测试只在源仓库跑，不随公开仓库发布）
+- 测试：**599 passed**（geo 54 / filing 156 / audit 85 / crux 89 / inbox 75 / store 66 / console 16 / 根目录契约测试 47；另 `go-to-market/` 是内部商业包，其 8 个测试只在源仓库跑，不随公开仓库发布）
   根目录 `python3 -m pytest` 一条命令跑完；`make test` 仍是逐项目跑（七个子项目）。
 - 代码审查（[`docs/REVIEW-2026-11-12.md`](docs/REVIEW-2026-11-12.md)）：48 条可复现缺陷（P0 13 + P1 35）
   已全部修复并逐条留下复现测试（12 个修复提交，按项目分批）；审查时的 128 个测试全绿但缺陷全在 ——

@@ -35,6 +35,11 @@ class Execution:
     duplicate: bool = False      # 同一 (buyer, request_id) 的重放：不再执行、不再计费
     audit: list[dict] = field(default_factory=list)
 
+    @property
+    def id(self) -> str:
+        """幂等键的别名：文档和账单里都按 execution.id 引它。"""
+        return self.request_id
+
     def render(self) -> str:
         tag = "OK " if self.ok else "ERR"
         money = f" ${self.charged_cents / 100:.2f}" if self.charged_cents else " 免费"

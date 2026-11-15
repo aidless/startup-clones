@@ -2,7 +2,22 @@
 name = "cruxline"
 version = "0.1.0"
 description = "把企业专家的判断变成 agent 评测 rubric：逐条判定、人工一致性校准、版本回归门禁"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/aidless/cruxline"
+Issues = "https://github.com/aidless/cruxline/issues"
+Source = "https://github.com/aidless/cruxline"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: 安装（含测试依赖）
+        run: pip install -e ".[dev]"
+      - name: 测试
+        run: python -m pytest -q
+      - name: Excel 进出冒烟（init → analytics）
+        run: |
+          python -m auditloop.cli init --dir /tmp/al-init
+          # 模板里预填的四个示例年度故意带背离，analytics 按契约返回 1（有异常）；
+          # 0 才是「跑完且干净」。这里要证明的是「生成的 Excel 能被自己吃下」，
+          # 所以只接受 1，别把 1 当成失败、也别把任何别的码放过去。
+          set +e
+          python -m auditloop.cli analytics --facts /tmp/al-init/facts.xlsx
+          code=$?
+          set -e
+          test "$code" -eq 1
