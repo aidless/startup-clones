@@ -71,6 +71,8 @@ curl -X POST localhost:8765/api/ingest -H 'Content-Type: application/json' \
 python3 scripts/review_diff.py 0000320193
 # 从 EDGAR 现场抓（走 ingest.py 同一套清洗）
 python3 scripts/review_diff.py 0001481504 --data data-prospects
+# 没有上年申报时现场从 EDGAR 补抓（风险因素年度差异要靠它才真跑）
+python3 scripts/review_diff.py 0001481504 --data data-prospects --fetch-prior
 # 顺手导 PDF（需要 google-chrome；缺了 exit 2，不吞）
 python3 scripts/review_diff.py 0001481504 --data data-prospects --pdf /tmp/xeriant.pdf
 # 演示用：往临时副本里注入一处真缺陷，检查必须当场抓到
@@ -104,7 +106,7 @@ python3 scripts/check_coverage.py --json   # 机器读
 | 员工数 | 0 | 2 | 17 | 4 | 4 份没出现可解析的人数句式（写在「未覆盖」里） |
 | 同比口径 | 0 | 1 | 36 | 0 | 逐年比对营收/净利的方向与幅度 |
 | 分部加总 | 0 | 0 | 21 | 0 | 分部与合计的差额（不判对错，只给数） |
-| 正文百分比 | 0 | 0 | 5 | 34 | **只有 8 处百分比真正绑到合计口径**（见下） |
+| 正文百分比 | 0 | 0 | 5 | 34 | **只有 8 处百分比真正绑到合计口径**；小盘另靠金额增量绑定 1 处 |
 | 正文与 XBRL | 0 | 0 | 18 | 20 | 同指标两处取值的比对 |
 | 风险因素年度差异 | 0 | 0 | 0 | 22 | `data/` 每个 CIK 只有一份 10-K，没有上年可比 |
 
@@ -114,6 +116,19 @@ python3 scripts/check_coverage.py --json   # 机器读
 - Cisco「Within total revenue, **product** revenue increased by 16%」——分部口径；
 - Cisco「For the **fourth quarter** … total revenue increased by 18%」——季度同比；
 - Intel「**Data Center** net revenue … increased by 32%」、Meta「**RL** revenue … increased 3%」——分部名修饰主语。
+
+### 小盘客户是另一套写法：靠金额增量证明「这是合计口径」
+
+小盘 MD&A 常写「**Revenues** increased $2,122,710 or 11%」——主语只是裸的 `Revenues`，
+按大盘那套「必须带 total/net 限定词」的判据会被整条漏掉（PAID INC 实测：这一项原本
+报「正文未用百分比表述」，其实正文写得很清楚）。
+
+所以多加一条**补充**判据：句子里写出的金额增量如果与 XBRL 算出的当年增量一致（容差 2%），
+就认定这句讲的是合计口径。主语自带 `total/net` 时不走这条（避免与分部数字撞上）。
+同时加了两条反向守卫，防止这条补充判据把费用率当营收增长：
+
+- `as a percentage of revenue, … increased from 53.4% to 53.6%`（Legacy 原文）——水平变化，不是同比；
+- 句中有多个百分比并列（`17%, 19%, and 17%`）——逐期枚举，不是一次全年同比。
 
 修完的代价是**收紧**：22 份里 119 处百分比表述，只有 8 句能绑到合计口径（`Net sales increased 3%`、
 `Total revenue was $63.3 billion, an increase of 12%`、`Net revenue … up 12%` 三种写法）。

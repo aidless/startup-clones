@@ -63,7 +63,7 @@ def discover(data_dir: str | Path) -> list[dict]:
     return out
 
 
-def load(data_dir: str | Path, tag: str) -> Filing:
+def load(data_dir: str | Path, tag: str, period: str | None = None) -> Filing:
     """按 tag 取一份 10-K。
 
     tag 必须先收成单段再做文件名匹配：原实现直接 `glob(f"{tag}_10k_*.htm")`，
@@ -74,5 +74,12 @@ def load(data_dir: str | Path, tag: str) -> Filing:
     hits = sorted(data_dir.glob(glob.escape(tag) + "_10k_*.htm"))
     if not hits:
         raise FileNotFoundError(f"{data_dir} 下没有 {tag} 的 10-K")
+    if period is not None:
+        # 同一 CIK 可能有多个年度：不带 period 时 sorted() 取最后一个＝最新一期，
+        # 年度 diff 要的是指定那一期，否则两期读到同一份文件（diff 恒为 0）。
+        want = safe_component(period, "period")
+        hits = [h for h in hits if h.name.endswith(f"_10k_{want}.htm")]
+        if not hits:
+            raise FileNotFoundError(f"{data_dir} 下没有 {tag} 的 {period} 期 10-K")
     facts_path = data_dir / f"{tag}_facts.json"
     return Filing(tag, hits[-1], facts_path if facts_path.exists() else None)

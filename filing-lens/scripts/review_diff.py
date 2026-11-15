@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import re
 import sys
 import tempfile
@@ -20,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from filinglens import corpus, facts  # noqa: E402
+from filinglens import corpus, facts, ingest  # noqa: E402
 from filinglens.answer import RESPECTIVELY_RE, headcount_number  # noqa: E402
 
 # 「$145.10 billion」/「36.3B」/「1,204.3 million」
@@ -307,7 +308,10 @@ _CATEGORY_PREFIX = re.compile(
     r"\b(?:services?|products?|advertising|segment|geograph\w*|Americas|EMEA|APJC"
     r"|region\w*|division\w*|subscription\w*|hardware|software|cloud|other|devices?"
     r"|mobility|platforms?|solutions?)\s*$", re.I)
-_PCT_EXCLUDE = re.compile(r"%\s*of\b|\bof (?:total|net sales|revenue)\b", re.I)
+_PCT_EXCLUDE = re.compile(
+    r"%\s*of\b|\bof (?:total|net sales|revenue)\b"
+    # 「increased from 53.4% to 53.6%」讲的是费用率/毛利率的水平变化，不是营收同比。
+    r"|\bfrom\s+\d[\d.]*\s*%\s+to\b", re.I)
 
 
 # 季度/环比的句子不进年度同比比对：Cisco「For the fourth quarter ... total revenue
@@ -342,6 +346,41 @@ def _segment_prefix(before: str) -> bool:
         if w[:1].isupper() and w.lower() not in _DETERMINERS:
             return True
     return False
+
+
+def _quarter_scoped(sent: str, pct_start: int) -> bool:
+    """这个百分比是不是在讲季度/环比。
+
+    整句一刀切会把「Revenues increased $2,122,710 or 11% in 2025 primarily from a
+    result of the fourth quarter increase in shipping…」误杀（PAID INC 实测）——
+    这里的 quarter 讲的是收入来源，不是期间。所以按位置判：
+    · 句子开头 45 字内出现季度词 → 期间限定整句（Cisco「For the fourth quarter … 18%」）；
+    · 百分比前 40 字内出现季度词 → 就近限定（「… in the fourth quarter increased 18%」）；
+    · 句子里有多个百分比并列 → 是逐季度/逐期枚举（Meta「17%, 19%, and 17%」）。
+    """
+    head = sent[:45]
+    if _QUARTER_RE.search(head):
+        return True
+    if _QUARTER_RE.search(sent[max(0, pct_start - 40):pct_start]):
+        return True
+    return bool(_MULTI_PCT_LIST.search(sent))
+
+
+# 「17%, 19%, and 17%」——多个百分比并列＝逐期枚举，不是一次全年同比。
+_MULTI_PCT_LIST = re.compile(r"\d(?:[.,]\d+)?\s*%\s*(?:,\s*(?:and\s+)?|and\s+)\d")
+
+
+def _money_delta_matches(sent: str, delta: float) -> bool:
+    """句子里写出的金额增量，是否就是 XBRL 算出的当年增量。
+
+    小盘 MD&A 常写「Revenues increased $2,122,710 or 11%」——主语不带 total/net，
+    但增量金额能对上 XBRL，就足以证明它讲的是合计口径（PAID INC 实测）。
+    这是**补充**判据：主语自带合计含义时不用它，避免与分部数字撞上。
+    """
+    if not delta:
+        return False
+    tol = max(1.0, abs(delta) * 0.02)
+    return any(abs(abs(val) - abs(delta)) <= tol for val, _raw in _money_values(sent))
 
 
 def _pct_bound_to_total(sent: str, pct_start: int) -> bool:
@@ -397,14 +436,18 @@ def check_text_percent(f: corpus.Filing, rep: Report) -> None:
                 continue
             if _PCT_EXCLUDE.search(sent):
                 continue
-            # 同样要绑主语：Meta 的「Services net sales decreased $770 million, or 28%」
-            # 是分部口径，拿它比总营收同比会产生 12 条假阳（实测）。
-            if not _TOTAL_SUBJECT.search(sent):
-                continue
-            if _QUARTER_RE.search(sent):
-                continue
+            # 主语自带合计含义（total/net sales…）→ 必须绑到那个主语；
+            # 主语只是裸的 revenues/sales → 只有当句中金额增量与 XBRL 一致时才认。
+            # Meta 的「Services net sales decreased $770 million, or 28%」属第一种但绑不上，
+            # 直接丢掉（拿分部比总营收会产生 12 条假阳，实测）。
+            subject_bound = _TOTAL_SUBJECT.search(sent) is not None
             for m in _PCT.finditer(sent):
-                if not _pct_bound_to_total(sent, m.start()):
+                if _quarter_scoped(sent, m.start()):
+                    continue
+                if subject_bound:
+                    if not _pct_bound_to_total(sent, m.start()):
+                        continue
+                elif not _money_delta_matches(sent, cur.val - prev.val):
                     continue
                 claimed = _pct_value(m)
                 if abs(claimed - abs(actual)) <= 1.0:
@@ -482,20 +525,60 @@ def check_text_vs_xbrl(f: corpus.Filing, rep: Report) -> None:
                                 f"正文没有与 XBRL 值 {facts.fmt_money(latest.val)} 同量级的表述"))
 
 
+def _risk_paragraphs(f: corpus.Filing) -> list[str]:
+    """Item 1A 里的正文段落（按空行切，短于 60 字的碎片丢掉）。"""
+    out: list[str] = []
+    for c in f.chunks:
+        if "item 1a" not in c.ref.lower():
+            continue
+        for para in re.split(r"\n\s*\n", c.text):
+            p = " ".join(para.split())
+            if len(p) >= 60:
+                out.append(p)
+    return out
+
+
 def check_risk_diff(f: corpus.Filing, rep: Report, data_dir: Path) -> None:
-    """6. 风险因素年度差异：只有拿到同一 CIK 的上一份 10-K 才能做。"""
+    """6. 风险因素年度差异：拿到同一 CIK 的上一份 10-K 就真做段落级 diff。
+
+    第一版只比「段落序号集合」，两边序号本来就从 1 数起，几乎恒等——那种实现跑起来
+    像做了事，其实什么都没比。改成按段落文本的插入/删除块比对（difflib），并只把
+    新增段落的前 120 字摘出来给人核对。
+    """
     peers = [m for m in corpus.discover(data_dir)
              if m["cik"] == f.cik and m["period"] != f.period]
     if not peers:
-        rep.skipped.append(("风险因素年度差异", f"data/ 里只有 {f.cik} 的一份 10-K，无法做年度 diff"))
+        rep.skipped.append(("风险因素年度差异",
+                            f"{data_dir.name}/ 里只有 {f.cik} 的一份 10-K，无法做年度 diff"
+                            f"（加 --fetch-prior 可现场补抓上年申报）"))
         return
-    prev = corpus.load(data_dir, peers[0]["period"])
-    old = {c.ref.split("#")[-1] for c in prev.chunks if "Item 1a" in c.ref}
-    new = {c.ref.split("#")[-1] for c in f.chunks if "Item 1a" in c.ref}
+    prev_meta = max(peers, key=lambda m: m["period"]) if peers else None
+    prev = corpus.load(data_dir, prev_meta["tag"], prev_meta["period"])
+    old = _risk_paragraphs(prev) if prev.period < f.period else _risk_paragraphs(f)
+    new = _risk_paragraphs(f) if prev.period < f.period else _risk_paragraphs(prev)
+    if not old or not new:
+        rep.skipped.append(("风险因素年度差异",
+                            f"两期里有一期的 Item 1A 段落抽不出来（{len(old)} 段 / {len(new)} 段），"
+                            f"这项解析器认不出，不做 diff"))
+        return
+    sm = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
+    added: list[str] = []
+    removed: list[str] = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("insert", "replace"):
+            added.extend(new[j1:j2])
+        if tag in ("delete", "replace"):
+            removed.extend(old[i1:i2])
+    span = f"Item 1A {prev.period} → {f.period}"
     rep.add(Finding("风险因素年度差异",
-                    f"上年 {len(old)} 段、本年 {len(new)} 段（按段落序号比，不做语义 diff）",
-                    f"Item 1a {prev.period} → {f.period}",
-                    "逐年核对新增/删除的风险条目是否与 MD&A 表述冲突", "info"))
+                    f"上年 {prev.period} {len(old)} 段、本年 {f.period} {len(new)} 段；新增/改写 {len(added)} 段、"
+                    f"删除/改写 {len(removed)} 段（段落级文本比对，不做语义判断）",
+                    span, "逐年核对新增/改写的风险条目是否与 MD&A 的表述冲突", "info",
+                    doubt="段落按空行切分，原文重排或换行变化也会被计入；条数用于定位，不做规模结论"))
+    for para in added[:2]:
+        rep.add(Finding("风险因素年度差异",
+                        f"新增/改写的段落：「{para[:120]}…」" if len(para) > 120 else f"新增/改写的段落：「{para}」",
+                        span, "确认这条新风险在本年 MD&A 里有没有对应表述", "look"))
 
 
 def render(rep: Report) -> str:
@@ -560,8 +643,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pdf", help="同时导出一份 PDF（客户收到的是 PDF 不是 markdown）")
     ap.add_argument("--inject", nargs=2, metavar=("OLD", "NEW"),
                     help="演示用：在临时副本上改掉一处文本，验证检查能抓到")
+    ap.add_argument("--fetch-prior", action="store_true",
+                    help="data 目录里没有上年 10-K 时现场从 EDGAR 补抓（走 ingest 同一套清洗）")
     a = ap.parse_args(argv)
-    rep = build(a.cik, Path(a.data), tuple(a.inject) if a.inject else None)
+    data_dir = Path(a.data)
+    if a.fetch_prior:
+        peers = [m for m in corpus.discover(data_dir) if m["cik"] == a.cik]
+        cur = next((m for m in peers if m["period"]), None)
+        if cur is not None and len(peers) < 2:
+            got = ingest.from_cik(a.cik, data_dir, prior_to=cur["period"])
+            print(f"补抓上年 10-K：{got['period']}（{got['html_kb']} KB，"
+                  f"accesion {got.get('accession', '?')}）", file=sys.stderr)
+    rep = build(a.cik, data_dir, tuple(a.inject) if a.inject else None)
     rep.injected = tuple(a.inject) if a.inject else None
     text = render(rep)
     if a.out:

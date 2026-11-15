@@ -60,18 +60,25 @@ def test_segment_subject_does_not_bind(sent):
     assert rd._pct_bound_to_total(sent, _pct_pos(sent)) is False
 
 
-def test_quarterly_sentence_is_rejected_wholesale():
+def test_quarterly_sentence_is_rejected_by_scope():
     sent = ("For the fourth quarter of fiscal 2026, as compared with the fourth quarter of "
             "fiscal 2025, total revenue increased by 18% to $17.3 billion.")
-    assert rd._QUARTER_RE.search(sent)
+    assert rd._quarter_scoped(sent, sent.index("18%"))
 
 
 @pytest.mark.parametrize("sent", [
     "Total revenue increased 17%, 19%, and 17% between the third and fourth quarters.",
     "Revenue grew 4% sequentially.",
 ])
-def test_sequential_sentence_is_rejected_wholesale(sent):
-    assert rd._QUARTER_RE.search(sent)
+def test_sequential_sentence_is_rejected_by_scope(sent):
+    assert rd._quarter_scoped(sent, sent.index("%"))
+
+
+def test_quarter_word_about_the_source_is_not_a_period():
+    """PAID INC：quarter 讲的是收入来源（fourth quarter increase in shipping…），不是期间。"""
+    sent = ("Revenues increased $2,122,710 or 11% in 2025 primarily from a result of the "
+            "fourth quarter increase in shipping coordination and label generation services.")
+    assert rd._quarter_scoped(sent, sent.index("11%")) is False
 
 
 def test_percent_forms_all_parse():

@@ -110,27 +110,50 @@ def _gunzip_limited(raw: bytes, limit: int | None = None) -> bytes:
     return out
 
 
-def latest_10k(cik: str) -> dict:
-    """从 submissions 里取最近一份 10-K 的下载信息。"""
-    cik10 = normalize_cik(cik)
+def _tenks(cik10: str) -> list[dict]:
+    """submissions 里全部 10-K（新到旧），一条一份。"""
     payload = json.loads(download(f"https://data.sec.gov/submissions/CIK{cik10}.json"))
     recent = payload["filings"]["recent"]
+    out = []
     for form, acc, doc, filed, period in zip(recent["form"], recent["accessionNumber"],
                                              recent["primaryDocument"], recent["filingDate"],
                                              recent["reportDate"]):
-        if form == "10-K":
-            accn = acc.replace("-", "")
-            return {
-                "cik": cik10,
-                "company": payload.get("name", ""),
-                "accession": acc,
-                "filed": filed,
-                "period": period or filed,
-                "html_url": (f"https://www.sec.gov/Archives/edgar/data/"
-                             f"{int(cik10)}/{accn}/{doc}"),
-                "facts_url": f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json",
-            }
-    raise IngestError(f"CIK {cik10} 最近的申报里没有 10-K")
+        if form != "10-K":
+            continue
+        accn = acc.replace("-", "")
+        out.append({
+            "cik": cik10,
+            "company": payload.get("name", ""),
+            "accession": acc,
+            "filed": filed,
+            "period": period or filed,
+            "html_url": (f"https://www.sec.gov/Archives/edgar/data/"
+                         f"{int(cik10)}/{accn}/{doc}"),
+            "facts_url": f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json",
+        })
+    return out
+
+
+def latest_10k(cik: str) -> dict:
+    """从 submissions 里取最近一份 10-K 的下载信息。"""
+    cik10 = normalize_cik(cik)
+    found = _tenks(cik10)
+    if not found:
+        raise IngestError(f"CIK {cik10} 最近的申报里没有 10-K")
+    return found[0]
+
+
+def prior_10k(cik: str, before_period: str) -> dict:
+    """同一 CIK 里 reportDate 早于 before_period 的最近一份 10-K。
+
+    风险因素年度差异要靠它：只有一份 10-K 时那一项只能写「无法比较」，
+    等于把「没测」当成「没问题」。
+    """
+    cik10 = normalize_cik(cik)
+    found = [k for k in _tenks(cik10) if (k["period"] or k["filed"]) < before_period]
+    if not found:
+        raise IngestError(f"CIK {cik10} 在 {before_period} 之前没有更早的 10-K")
+    return found[0]
 
 
 def _write(html: bytes, facts_payload: dict | None, tag: str, period: str,
@@ -158,10 +181,23 @@ def _write(html: bytes, facts_payload: dict | None, tag: str, period: str,
     }
 
 
-def from_cik(cik: str, data_dir: str | Path = DEFAULT_DATA, pause: float = 1.2) -> dict:
-    """按 CIK 抓最近一份 10-K 与 companyfacts。"""
+def from_cik(cik: str, data_dir: str | Path = DEFAULT_DATA, pause: float = 1.2,
+             period: str | None = None, prior_to: str | None = None) -> dict:
+    """按 CIK 抓一份 10-K 与 companyfacts。
+
+    `period` 指定要哪一期；`prior_to` 表示「早于这一期的那一份」（年度 diff 用）。
+    两个都不给就是最近一份。
+    """
     data_dir = Path(data_dir)
-    info = latest_10k(cik)
+    if prior_to:
+        info = prior_10k(cik, prior_to)
+    elif period:
+        cands = [k for k in _tenks(normalize_cik(cik)) if k["period"] == period]
+        if not cands:
+            raise IngestError(f"CIK {normalize_cik(cik)} 没有 reportDate={period} 的 10-K")
+        info = cands[0]
+    else:
+        info = latest_10k(cik)
     html = download(info["html_url"])
     time.sleep(pause)          # SEC 要求 <=10 req/s，这里更保守
     facts_payload = None
@@ -177,7 +213,8 @@ def from_cik(cik: str, data_dir: str | Path = DEFAULT_DATA, pause: float = 1.2) 
                        info["cik"], exc)
         facts_payload = None
     out = _write(html, facts_payload, info["cik"], info["period"], data_dir)
-    out.update({"company": info["company"], "filed": info["filed"], "cik": info["cik"]})
+    out.update({"company": info["company"], "filed": info["filed"], "cik": info["cik"],
+                "accession": info.get("accession", "")})
     return out
 
 

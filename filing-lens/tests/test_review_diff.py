@@ -297,3 +297,53 @@ def test_injected_percent_defect_is_still_flagged():
             if f.check == "正文百分比" and f.severity == "mismatch"]
     assert len(mism) == 1, [f.what for f in mism]
     assert "42%" in mism[0].what
+
+
+PROSPECTS = ROOT / "data-prospects"
+
+
+@pytest.fixture(scope="module")
+def paid():
+    return rd.build("0001017655", PROSPECTS)
+
+
+@pytest.fixture(scope="module")
+def legacy():
+    return rd.build("0001836754", PROSPECTS)
+
+
+def test_bare_revenues_with_matching_dollar_delta_binds(paid):
+    """小盘写法：「Revenues increased $2,122,710 or 11%」主语不带 total/net。
+
+    金额增量与 XBRL 算出的当年增量一致，就足以证明这是合计口径——
+    光看主语会把这句整条漏掉（小盘 MD&A 的典型写法）。
+    """
+    hits = [f for f in paid.findings if f.check == "正文百分比"]
+    assert any("11%" in f.what for f in hits), [f.what for f in hits]
+
+
+def test_expense_ratio_is_never_a_revenue_claim(legacy):
+    """「As a percentage of revenue, ... expense increased from 53.4% to 53.6%」
+
+    这是费用率（水平变化），不是营收同比。判成 mismatch 就是拿坏尺判客户错。
+    """
+    bad = [f for f in legacy.findings if f.check == "正文百分比" and f.severity == "mismatch"]
+    assert bad == [], [f.what for f in bad]
+    assert not any("53.4%" in f.what for f in legacy.findings)
+
+
+def test_risk_diff_compares_a_real_previous_year(legacy):
+    """Legacy 在 data-prospects 里有 2025 与 2026 两期 → 这一项必须真比，不是 skipped。"""
+    hits = [f for f in legacy.findings if f.check == "风险因素年度差异"]
+    assert hits, "风险因素年度差异没出结果"
+    assert "2025-06-30 → 2026-06-30" in hits[0].ref
+    assert "新增/改写 0 段" not in hits[0].what, hits[0].what
+    assert not [s for s in legacy.skipped if s[0] == "风险因素年度差异"]
+
+
+def test_risk_diff_says_how_to_get_the_previous_year():
+    """只有一份时不能只说「无法比较」，要告诉人怎么补上（--fetch-prior）。"""
+    rep = rd.build("0001481504", PROSPECTS)
+    sk = [s for s in rep.skipped if s[0] == "风险因素年度差异"]
+    if sk:                     # 该 CIK 若已补抓上年，则这一项直接出结果
+        assert "--fetch-prior" in sk[0][1], sk[0]
